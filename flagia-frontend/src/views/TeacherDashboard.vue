@@ -1,0 +1,596 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuth } from '../composables/useAuth'
+import RichTextEditor from '../components/RichTextEditor.vue'
+
+function resolveApiBase(): string {
+  if (import.meta.env.DEV) return ''
+  const host = window.location.hostname
+  if (host === 'flagia.devmeko.xyz') return 'https://flagiaapi.devmeko.xyz'
+  return `${window.location.protocol}//${host}:3502`
+}
+
+const API = resolveApiBase()
+const WS_URL = import.meta.env.PROD
+  ? (window.location.hostname === 'flagia.devmeko.xyz' ? 'wss://flagiaapi.devmeko.xyz/ws' : `ws://${window.location.hostname}:3502/ws`)
+  : 'ws://localhost:3502/ws'
+const router = useRouter()
+const { user, token } = useAuth()
+
+// State
+const assignments = ref<any[]>([])
+const selectedAssignment = ref<any>(null)
+const submissions = ref<any[]>([])
+const loading = ref(true)
+const loadingSubs = ref(false)
+const showCreateModal = ref(false)
+const showDetailModal = ref(false)
+const showDeleteModal = ref(false)
+const assignmentToDelete = ref<string | null>(null)
+const detailSubmission = ref<any>(null)
+
+// Create form
+const form = ref({
+  title: '',
+  dueDate: '',
+  timeLimit: 60,
+  textLimit: 3000,
+  maxScore: 100,
+  templateText: '',
+  mode: 'STANDARD',
+})
+const creating = ref(false)
+const copySuccess = ref(false)
+
+// Stats
+const totalSubmissions = computed(() => submissions.value.length)
+const submittedCount = computed(() =>
+  submissions.value.filter(s => s.status === 'SUBMITTED' || s.status === 'FORCE_CLOSED').length
+)
+const avgScore = computed(() => {
+  const scored = submissions.value.filter(s => s.flagia_score != null)
+  if (scored.length === 0) return null
+  const sum = scored.reduce((a, s) => a + Number(s.flagia_score), 0)
+  return (sum / scored.length).toFixed(1)
+})
+const flaggedCount = computed(() =>
+  submissions.value.filter(s => s.flag_status === 'AMBER' || s.flag_status === 'RED').length
+)
+
+// Socket
+let socket: WebSocket | null = null
+
+function connectWS() {
+  if (!token.value) return
+  socket = new WebSocket(WS_URL)
+  socket.onopen = () => {
+    socket?.send(JSON.stringify({
+      type: 'auth',
+      payload: { token: token.value }
+    }))
+  }
+  socket.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      const { type, payload } = msg
+      if (type === 'auth_ok') {
+        if (selectedAssignment.value) {
+          socket?.send(JSON.stringify({
+            type: 'teacher_join',
+            payload: { assignmentId: selectedAssignment.value.id }
+          }))
+        }
+      } else if (type === 'submissions_update') {
+        if (selectedAssignment.value && payload.assignmentId === selectedAssignment.value.id) {
+          fetchSubmissionsSilently()
+        }
+      } else if (type === 'assignments_update') {
+        fetchAssignmentsSilently()
+      }
+    } catch (err) {
+      console.error('WS message error:', err)
+    }
+  }
+  socket.onclose = () => {
+    setTimeout(() => {
+      if (socket) connectWS()
+    }, 3000)
+  }
+}
+
+async function fetchSubmissionsSilently() {
+  const a = selectedAssignment.value
+  if (!a) return
+  try {
+    const res = await fetch(`${API}/api/assignments/${a.id}/submissions`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    if (res.ok) {
+      submissions.value = await res.json()
+    }
+  } catch { /* noop */ }
+}
+
+async function fetchAssignmentsSilently() {
+  try {
+    const res = await fetch(`${API}/api/assignments`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    if (res.ok) {
+      const list = await res.json()
+      assignments.value = list
+      if (selectedAssignment.value) {
+        const found = list.find((item: any) => item.id === selectedAssignment.value.id)
+        if (found) {
+          selectedAssignment.value = found
+        } else {
+          selectedAssignment.value = null
+          submissions.value = []
+        }
+      }
+    }
+  } catch { /* noop */ }
+}
+
+onMounted(async () => {
+  try {
+    const res = await fetch(`${API}/api/assignments`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    if (res.ok) {
+      assignments.value = await res.json()
+    }
+  } catch { /* noop */ } finally { loading.value = false }
+  connectWS()
+})
+
+onUnmounted(() => {
+  if (socket) {
+    const s = socket
+    socket = null
+    s.close()
+  }
+})
+
+async function selectAssignment(a: any) {
+  selectedAssignment.value = a
+  loadingSubs.value = true
+  try {
+    const res = await fetch(`${API}/api/assignments/${a.id}/submissions`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    if (res.ok) submissions.value = await res.json()
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        type: 'teacher_join',
+        payload: { assignmentId: a.id }
+      }))
+    }
+  } catch { /* noop */ } finally { loadingSubs.value = false }
+}
+
+function backToList() {
+  selectedAssignment.value = null
+  submissions.value = []
+}
+
+async function createAssignment() {
+  creating.value = true
+  try {
+    const res = await fetch(`${API}/api/assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
+      body: JSON.stringify({
+        title: form.value.title,
+        dueDate: form.value.dueDate,
+        timeLimit: form.value.timeLimit,
+        textLimit: form.value.textLimit,
+        maxScore: form.value.maxScore,
+        templateText: form.value.templateText,
+        mode: form.value.mode,
+      }),
+    })
+    if (res.ok) {
+      const newA = await res.json()
+      assignments.value.unshift(newA)
+      showCreateModal.value = false
+      form.value = { title: '', dueDate: '', timeLimit: 60, textLimit: 3000, maxScore: 100, templateText: '', mode: 'STANDARD' }
+      selectAssignment(newA)
+    }
+  } catch { /* noop */ } finally { creating.value = false }
+}
+
+function confirmDelete(id: string) {
+  assignmentToDelete.value = id
+  showDeleteModal.value = true
+}
+
+async function executeDelete() {
+  const id = assignmentToDelete.value
+  if (!id) return
+  try {
+    await fetch(`${API}/api/assignments/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    assignments.value = assignments.value.filter(a => a.id !== id)
+    if (selectedAssignment.value?.id === id) {
+      selectedAssignment.value = null
+      submissions.value = []
+    }
+  } catch { /* noop */ } finally {
+    showDeleteModal.value = false
+    assignmentToDelete.value = null
+  }
+}
+
+function openDetail(sub: any) {
+  detailSubmission.value = sub
+  showDetailModal.value = true
+}
+
+function goToAnalysis(submissionId: string) {
+  router.push(`/analysis/${submissionId}`)
+}
+
+function exportCSV() {
+  if (submissions.value.length === 0) return
+  const headers = ['학생명', '이메일', '상태', 'Flagia 점수', '판정', '제출일시']
+  const rows = submissions.value.map(s => [
+    s.student_name, s.student_email, s.status,
+    s.flagia_score != null ? Number(s.flagia_score).toFixed(1) : '-',
+    s.flag_status || '-',
+    s.submitted_at ? new Date(s.submitted_at).toLocaleString('ko-KR') : '-',
+  ])
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${selectedAssignment.value?.title || 'flagia'}_submissions.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function copyJoinCode(code: string) {
+  if (!code) return
+  navigator.clipboard.writeText(code).then(() => {
+    copySuccess.value = true
+    setTimeout(() => { copySuccess.value = false }, 2000)
+  })
+}
+
+function getModeLabel(mode: string) {
+  return { STRICT: '엄격', STANDARD: '표준', RESEARCH: '연구', CREATIVE: '자유' }[mode] || mode
+}
+function formatDate(d: string) {
+  return new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function getGaugeColor(flag: string) {
+  return { GREEN: '#16A34A', AMBER: '#D97706', RED: '#DC2626' }[flag] || '#9CA3AF'
+}
+function getGaugeCircumference() { return 2 * Math.PI * 18 }
+function getGaugeOffset(score: number) {
+  const c = getGaugeCircumference()
+  return c - (score / 100) * c
+}
+</script>
+
+<template>
+  <div class="w-full max-w-7xl mx-auto px-6 py-8">
+    
+    <!-- View 1: Assignments List -->
+    <div v-if="!selectedAssignment">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-text-primary">과제 관리</h1>
+          <p class="text-sm text-text-secondary mt-1">학생들에게 과제를 부여하고 분석 결과를 확인하세요.</p>
+        </div>
+        <button @click="showCreateModal = true" class="btn btn-primary">
+          + 새 과제 만들기
+        </button>
+      </div>
+
+      <div class="card overflow-hidden">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>과제 제목</th>
+              <th>참여 코드</th>
+              <th>마감일</th>
+              <th>설정</th>
+              <th class="text-right">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loading">
+              <td colspan="5" class="text-center py-8 text-text-muted">로딩 중...</td>
+            </tr>
+            <tr v-else-if="assignments.length === 0">
+              <td colspan="5" class="text-center py-12 text-text-muted">생성된 과제가 없습니다.</td>
+            </tr>
+            <tr v-else v-for="a in assignments" :key="a.id" @click="selectAssignment(a)" class="cursor-pointer hover:bg-background">
+              <td>
+                <div class="font-medium text-text-primary">{{ a.title }}</div>
+              </td>
+              <td>
+                <span class="font-mono bg-background px-2 py-1 rounded border border-border text-xs">{{ a.join_code }}</span>
+              </td>
+              <td class="text-text-secondary text-sm">
+                {{ formatDate(a.due_date) }}
+              </td>
+              <td>
+                <div class="flex items-center gap-2">
+                  <span class="badge badge-green text-xs">{{ getModeLabel(a.mode) }}</span>
+                  <span class="text-xs text-text-muted">{{ a.time_limit }}분</span>
+                </div>
+              </td>
+              <td class="text-right">
+                <button @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- View 2: Assignment Detail & Submissions -->
+    <div v-else>
+      <div class="mb-6 flex items-center gap-4">
+        <button @click="backToList" class="btn btn-ghost px-2 py-1 flex items-center gap-2 text-text-secondary">
+          <span>←</span> 목록으로
+        </button>
+      </div>
+      
+      <!-- Stats -->
+      <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="stat-card">
+          <div class="stat-label">전체 제출</div>
+          <div class="stat-value text-text-primary">{{ totalSubmissions }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">제출 완료</div>
+          <div class="stat-value text-flag-green">{{ submittedCount }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">평균 점수</div>
+          <div class="stat-value text-primary">{{ avgScore || '-' }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">주의 필요</div>
+          <div class="stat-value text-flag-amber">{{ flaggedCount }}</div>
+        </div>
+      </div>
+
+      <!-- Assignment Header -->
+      <div class="card p-6 mb-6 flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <h2 class="text-xl font-bold text-text-primary">{{ selectedAssignment.title }}</h2>
+            <div class="bg-primary-light text-primary px-2.5 py-1 rounded flex items-center gap-2 cursor-pointer border border-primary/20 hover:bg-primary hover:text-white transition-colors" @click="copyJoinCode(selectedAssignment.join_code)">
+              <span class="font-mono font-bold tracking-wider">{{ selectedAssignment.join_code }}</span>
+              <span class="text-xs">{{ copySuccess ? '✅ 복사됨' : '📋 복사' }}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-4 text-sm text-text-muted">
+            <span>📅 {{ formatDate(selectedAssignment.due_date) }}</span>
+            <span>⏱ {{ selectedAssignment.time_limit }}분</span>
+            <span>📏 {{ selectedAssignment.text_limit?.toLocaleString() }}자</span>
+            <span class="badge badge-green py-0.5">{{ getModeLabel(selectedAssignment.mode) }}</span>
+          </div>
+        </div>
+        <button v-if="submissions.length > 0" @click="exportCSV" class="btn btn-outline">
+          📊 CSV 내보내기
+        </button>
+      </div>
+
+      <!-- Submissions Table -->
+      <div class="card overflow-hidden">
+        <div class="p-4 border-b border-border bg-background/50">
+          <h3 class="font-semibold text-text-primary">학생 제출 현황</h3>
+        </div>
+        
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>학생</th>
+              <th>상태</th>
+              <th>점수</th>
+              <th>판정</th>
+              <th>제출일시</th>
+              <th>분석</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="loadingSubs">
+              <td colspan="6" class="text-center py-8 text-text-muted">로딩 중...</td>
+            </tr>
+            <tr v-else-if="submissions.length === 0">
+              <td colspan="6" class="text-center py-12 text-text-muted">아직 제출된 글이 없습니다.</td>
+            </tr>
+            <tr v-else v-for="sub in submissions" :key="sub.id" @click="openDetail(sub)" class="cursor-pointer hover:bg-background">
+              <td>
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-full bg-primary-light flex items-center justify-center text-sm font-semibold text-primary">
+                    {{ sub.student_name?.charAt(0) || '?' }}
+                  </div>
+                  <div>
+                    <div class="text-sm font-medium text-text-primary">{{ sub.student_name }}</div>
+                    <div class="text-xs text-text-muted">{{ sub.student_email }}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="badge text-xs" :class="{
+                  'badge-green': sub.status === 'SUBMITTED',
+                  'badge-amber': sub.status === 'FORCE_CLOSED',
+                  'bg-primary-light text-primary': sub.status === 'IN_PROGRESS',
+                }">
+                  {{ sub.status === 'SUBMITTED' ? '제출 완료' : sub.status === 'FORCE_CLOSED' ? '자동 제출' : '작성 중' }}
+                </span>
+              </td>
+              <td>
+                <div v-if="sub.flagia_score != null" class="flex items-center gap-2">
+                  <div class="score-gauge">
+                    <svg width="48" height="48" viewBox="0 0 48 48">
+                      <circle cx="24" cy="24" r="18" fill="none" stroke="#E5E7EB" stroke-width="4"/>
+                      <circle cx="24" cy="24" r="18" fill="none" :stroke="getGaugeColor(sub.flag_status)"
+                        stroke-width="4" stroke-linecap="round"
+                        :stroke-dasharray="getGaugeCircumference()"
+                        :stroke-dashoffset="getGaugeOffset(Number(sub.flagia_score))"
+                      />
+                    </svg>
+                    <div class="score-text text-sm" :style="{ color: getGaugeColor(sub.flag_status) }">
+                      {{ Number(sub.flagia_score).toFixed(0) }}
+                    </div>
+                  </div>
+                </div>
+                <span v-else class="text-text-muted">-</span>
+              </td>
+              <td>
+                <span v-if="sub.flag_status" class="badge" :class="{
+                  'badge-green': sub.flag_status === 'GREEN',
+                  'badge-amber': sub.flag_status === 'AMBER',
+                  'badge-red': sub.flag_status === 'RED',
+                }">
+                  {{ sub.flag_status === 'GREEN' ? '🟢 안전' : sub.flag_status === 'AMBER' ? '🟡 주의' : '🔴 위험' }}
+                </span>
+                <span v-else class="text-text-muted">-</span>
+              </td>
+              <td class="text-sm text-text-muted">
+                {{ sub.submitted_at ? formatDate(sub.submitted_at) : '-' }}
+              </td>
+              <td>
+                <button v-if="sub.flagia_score != null" @click.stop="goToAnalysis(sub.id)" class="btn btn-ghost btn-sm text-primary">
+                  상세 분석 →
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div v-if="showDetailModal && detailSubmission" class="modal-overlay" @click.self="showDetailModal = false">
+      <div class="modal-content max-w-3xl mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-xl font-bold">{{ detailSubmission.student_name }}의 제출물</h3>
+            <p class="text-sm text-text-muted">{{ detailSubmission.student_email }}</p>
+          </div>
+          <button @click="showDetailModal = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
+
+        <div v-if="detailSubmission.flagia_score != null" class="flex items-center gap-4 mb-6 p-4 rounded-xl bg-background border border-border">
+          <div class="font-bold text-3xl" :style="{ color: getGaugeColor(detailSubmission.flag_status) }">
+            {{ Number(detailSubmission.flagia_score).toFixed(1) }}
+          </div>
+          <span class="badge" :class="{
+            'badge-green': detailSubmission.flag_status === 'GREEN',
+            'badge-amber': detailSubmission.flag_status === 'AMBER',
+            'badge-red': detailSubmission.flag_status === 'RED',
+          }">
+            {{ detailSubmission.flag_status }}
+          </span>
+          <button @click="goToAnalysis(detailSubmission.id); showDetailModal = false" class="btn btn-primary ml-auto">
+            상세 분석 보기
+          </button>
+        </div>
+
+        <h4 class="text-sm font-semibold mb-2">제출 내용</h4>
+        <div class="border border-border rounded-lg p-6 max-h-[50vh] overflow-y-auto bg-white shadow-inner">
+          <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || '(내용 없음)'"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Assignment Modal -->
+    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+      <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
+        <div class="flex items-center justify-between mb-5 flex-shrink-0">
+          <h3 class="text-xl font-bold">새 과제 만들기</h3>
+          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
+
+        <form @submit.prevent="createAssignment" class="flex flex-col gap-5 flex-1">
+          <div>
+            <label class="label">과제 제목</label>
+            <input v-model="form.title" class="input" placeholder="예: 인공지능의 윤리적 과제" required />
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="label">마감일</label>
+              <input v-model="form.dueDate" type="datetime-local" class="input" required />
+            </div>
+            <div>
+              <label class="label">제한 시간 (분)</label>
+              <input v-model.number="form.timeLimit" type="number" class="input" min="10" max="300" />
+            </div>
+          </div>
+
+          <div>
+            <label class="label">글자 수 제한</label>
+            <input v-model.number="form.textLimit" type="number" class="input" min="100" max="50000" />
+          </div>
+
+          <div>
+            <label class="label">최대 배점 (만점 기준)</label>
+            <input v-model.number="form.maxScore" type="number" class="input" min="1" max="1000" placeholder="100" />
+          </div>
+
+          <div>
+            <label class="label">분석 모드</label>
+            <div class="grid grid-cols-2 gap-3 mt-1">
+              <div @click="form.mode = 'STRICT'" class="mode-option" :class="{ selected: form.mode === 'STRICT' }">
+                <div class="font-bold text-primary mb-1">엄격 (Strict)</div>
+                <div class="text-xs text-text-secondary leading-relaxed">모든 탭 이탈 및 복사-붙여넣기를 엄격하게 감지합니다. 시험이나 평가에 적합합니다.</div>
+              </div>
+              <div @click="form.mode = 'STANDARD'" class="mode-option" :class="{ selected: form.mode === 'STANDARD' }">
+                <div class="font-bold text-primary mb-1">표준 (Standard)</div>
+                <div class="text-xs text-text-secondary leading-relaxed">일반적인 글쓰기 환경. 잦은 탭 이탈이나 비정상적인 패턴에만 경고합니다.</div>
+              </div>
+              <div @click="form.mode = 'RESEARCH'" class="mode-option" :class="{ selected: form.mode === 'RESEARCH' }">
+                <div class="font-bold text-primary mb-1">연구 (Research)</div>
+                <div class="text-xs text-text-secondary leading-relaxed">자료 조사를 위한 탭 이동과 외부 텍스트 참조를 허용합니다.</div>
+              </div>
+              <div @click="form.mode = 'CREATIVE'" class="mode-option" :class="{ selected: form.mode === 'CREATIVE' }">
+                <div class="font-bold text-primary mb-1">자유 (Creative)</div>
+                <div class="text-xs text-text-secondary leading-relaxed">행동을 전혀 제한하지 않고 기본적인 타이핑 패턴만 수집합니다.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex-1 flex flex-col min-h-[300px]">
+            <label class="label">가이드라인 템플릿 (학생에게 기본 제공되는 텍스트)</label>
+            <div class="flex-1 h-full relative" style="min-height: 250px;">
+              <RichTextEditor v-model="form.templateText" placeholder="여기에 템플릿 내용을 작성하세요..." />
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-border flex-shrink-0">
+            <button type="button" @click="showCreateModal = false" class="btn btn-outline">취소</button>
+            <button type="submit" class="btn btn-primary" :disabled="creating">
+              {{ creating ? '생성 중...' : '과제 생성하기' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+      <div class="modal-content max-w-sm mx-4 p-6 text-center">
+        <div class="text-4xl mb-4">🗑️</div>
+        <h3 class="text-lg font-bold mb-2">과제 삭제</h3>
+        <p class="text-sm text-text-secondary mb-6">이 과제를 삭제하시겠습니까?<br>모든 제출물이 함께 삭제되며 복구할 수 없습니다.</p>
+        <div class="flex gap-2">
+          <button @click="showDeleteModal = false" class="btn btn-outline flex-1">취소</button>
+          <button @click="executeDelete" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">삭제</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
