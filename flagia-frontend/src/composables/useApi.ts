@@ -7,6 +7,9 @@ function resolveApiBase(): string {
   if (host === 'flagia.devmeko.xyz') {
     return 'https://flagiaapi.devmeko.xyz'
   }
+  else if (host === 'flagia.kr') {
+    return 'https://api.flagia.kr'
+  }
   // Local production (pm2 serve) — point to backend port
   return `${window.location.protocol}//${host}:3502`
 }
