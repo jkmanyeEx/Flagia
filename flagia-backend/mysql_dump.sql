@@ -1,8 +1,8 @@
 -- Flagia Database Schema
 -- MySQL 8.0+
 
-CREATE DATABASE IF NOT EXISTS flagia_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE flagia_db;
+CREATE DATABASE IF NOT EXISTS flagia CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE flagia;
 
 -- ==========================================
 -- Users Table
@@ -19,11 +19,43 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB;
 
 -- ==========================================
+-- Classrooms Table
+-- A teacher-owned group. Always has a join code; students join via code.
+-- ==========================================
+CREATE TABLE IF NOT EXISTS classrooms (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  teacher_id VARCHAR(36) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  join_code VARCHAR(8) NOT NULL UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_classrooms_teacher (teacher_id)
+) ENGINE=InnoDB;
+
+-- ==========================================
+-- Classroom Members (student enrolment)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS classroom_members (
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
+  classroom_id VARCHAR(36) NOT NULL,
+  student_id VARCHAR(36) NOT NULL,
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_classroom_student (classroom_id, student_id),
+  FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_cm_student (student_id)
+) ENGINE=InnoDB;
+
+-- ==========================================
 -- Assignments Table
+-- classroom_id is nullable: assignments may belong to a classroom OR be
+-- standalone (legacy direct-join via the assignment's own join_code).
 -- ==========================================
 CREATE TABLE IF NOT EXISTS assignments (
   id VARCHAR(36) NOT NULL PRIMARY KEY,
   teacher_id VARCHAR(36) NOT NULL,
+  classroom_id VARCHAR(36) NULL,
   title VARCHAR(500) NOT NULL,
   due_date DATETIME NOT NULL,
   time_limit INT NOT NULL DEFAULT 60 COMMENT 'Minutes',
@@ -31,10 +63,13 @@ CREATE TABLE IF NOT EXISTS assignments (
   max_score INT NOT NULL DEFAULT 100 COMMENT 'Maximum score possible',
   template_text TEXT COMMENT 'Markdown guideline template',
   mode ENUM('STRICT', 'STANDARD', 'RESEARCH', 'CREATIVE') NOT NULL DEFAULT 'STANDARD',
+  join_code VARCHAR(8) NOT NULL UNIQUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (classroom_id) REFERENCES classrooms(id) ON DELETE CASCADE,
   INDEX idx_assignments_teacher (teacher_id),
+  INDEX idx_assignments_classroom (classroom_id),
   INDEX idx_assignments_due (due_date)
 ) ENGINE=InnoDB;
 
@@ -46,7 +81,8 @@ CREATE TABLE IF NOT EXISTS submissions (
   assignment_id VARCHAR(36) NOT NULL,
   student_id VARCHAR(36) NOT NULL,
   final_markdown LONGTEXT,
-  status ENUM('IN_PROGRESS', 'SUBMITTED', 'FORCE_CLOSED') NOT NULL DEFAULT 'IN_PROGRESS',
+  -- ASSIGNED = joined but editor never opened; IN_PROGRESS = actively writing
+  status ENUM('ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'FORCE_CLOSED') NOT NULL DEFAULT 'ASSIGNED',
   score DECIMAL(5, 2) DEFAULT NULL COMMENT 'Teacher score',
   feedback TEXT DEFAULT NULL COMMENT 'Teacher feedback',
   submitted_at DATETIME DEFAULT NULL,

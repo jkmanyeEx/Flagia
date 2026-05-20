@@ -404,9 +404,9 @@ function getGaugeOffset(score: number) {
             <tr>
               <th>학생</th>
               <th>상태</th>
-              <th>점수</th>
-              <th>판정</th>
+              <th>성적</th>
               <th>제출일시</th>
+              <th>무결성</th>
               <th>분석</th>
             </tr>
           </thead>
@@ -434,40 +434,28 @@ function getGaugeOffset(score: number) {
                   'badge-green': sub.status === 'SUBMITTED',
                   'badge-amber': sub.status === 'FORCE_CLOSED',
                   'bg-primary-light text-primary': sub.status === 'IN_PROGRESS',
+                  'bg-background text-text-muted': sub.status === 'ASSIGNED',
                 }">
-                  {{ sub.status === 'SUBMITTED' ? '제출 완료' : sub.status === 'FORCE_CLOSED' ? '자동 제출' : '작성 중' }}
+                  {{ sub.status === 'SUBMITTED' ? '제출 완료' : sub.status === 'FORCE_CLOSED' ? '자동 제출' : sub.status === 'IN_PROGRESS' ? '작성 중' : '시작 전' }}
                 </span>
               </td>
+              <!-- Graded score (teacher's grade) — the primary, prominent value -->
               <td>
-                <div v-if="sub.flagia_score != null" class="flex items-center gap-2">
-                  <div class="score-gauge">
-                    <svg width="48" height="48" viewBox="0 0 48 48">
-                      <circle cx="24" cy="24" r="18" fill="none" stroke="#E5E7EB" stroke-width="4"/>
-                      <circle cx="24" cy="24" r="18" fill="none" :stroke="getGaugeColor(sub.flag_status)"
-                        stroke-width="4" stroke-linecap="round"
-                        :stroke-dasharray="getGaugeCircumference()"
-                        :stroke-dashoffset="getGaugeOffset(Number(sub.flagia_score))"
-                      />
-                    </svg>
-                    <div class="score-text text-sm" :style="{ color: getGaugeColor(sub.flag_status) }">
-                      {{ Number(sub.flagia_score).toFixed(0) }}
-                    </div>
-                  </div>
+                <div v-if="sub.score != null" class="font-bold text-lg text-text-primary">
+                  {{ Number(sub.score) }}<span class="text-xs font-normal text-text-muted"> / {{ selectedAssignment?.max_score || 100 }}</span>
                 </div>
-                <span v-else class="text-text-muted">-</span>
-              </td>
-              <td>
-                <span v-if="sub.flag_status" class="badge" :class="{
-                  'badge-green': sub.flag_status === 'GREEN',
-                  'badge-amber': sub.flag_status === 'AMBER',
-                  'badge-red': sub.flag_status === 'RED',
-                }">
-                  {{ sub.flag_status === 'GREEN' ? '🟢 안전' : sub.flag_status === 'AMBER' ? '🟡 주의' : '🔴 위험' }}
-                </span>
-                <span v-else class="text-text-muted">-</span>
+                <span v-else class="text-xs text-text-muted">미채점</span>
               </td>
               <td class="text-sm text-text-muted">
                 {{ sub.submitted_at ? formatDate(sub.submitted_at) : '-' }}
+              </td>
+              <!-- Flagia integrity score — secondary/subtle, with flag dot -->
+              <td>
+                <div v-if="sub.flagia_score != null" class="flex items-center gap-1.5 text-sm">
+                  <span class="inline-block w-2 h-2 rounded-full" :style="{ background: getGaugeColor(sub.flag_status) }"></span>
+                  <span class="font-mono text-text-secondary">{{ Number(sub.flagia_score).toFixed(0) }}</span>
+                </div>
+                <span v-else class="text-text-muted text-sm">-</span>
               </td>
               <td>
                 <button v-if="sub.flagia_score != null" @click.stop="goToAnalysis(sub.id)" class="btn btn-ghost btn-sm text-primary">
@@ -571,14 +559,16 @@ function getGaugeOffset(score: number) {
             </div>
           </div>
 
-          <div class="flex-1 flex flex-col min-h-[300px]">
+          <div class="flex flex-col">
             <label class="label">가이드라인 템플릿 (학생에게 기본 제공되는 텍스트)</label>
-            <div class="flex-1 h-full relative" style="min-height: 250px;">
+            <!-- Fixed height + internal scroll: a long template won't grow the
+                 modal or overlap the sticky footer. -->
+            <div class="relative" style="height: 220px;">
               <RichTextEditor v-model="form.templateText" placeholder="여기에 템플릿 내용을 작성하세요..." />
             </div>
           </div>
 
-          <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-border flex-shrink-0">
+          <div class="flex justify-end gap-3 pt-4 border-t border-border sticky bottom-0 -mx-6 px-6 pb-1" style="background: var(--color-surface);">
             <button type="button" @click="showCreateModal = false" class="btn btn-outline">취소</button>
             <button type="submit" class="btn btn-primary" :disabled="creating">
               {{ creating ? '생성 중...' : '과제 생성하기' }}

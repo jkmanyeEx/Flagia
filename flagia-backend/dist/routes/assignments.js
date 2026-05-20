@@ -17,28 +17,38 @@ router.get('/', auth_1.authMiddleware, async (req, res) => {
         let params;
         if (user.role === 'TEACHER') {
             query = `
-        SELECT a.*, 
+        SELECT a.*,
           (SELECT COUNT(*) FROM submissions s WHERE s.assignment_id = a.id) as submission_count,
-          u.name as teacher_name
+          u.name as teacher_name,
+          c.name as classroom_name
         FROM assignments a
         JOIN users u ON a.teacher_id = u.id
+        LEFT JOIN classrooms c ON a.classroom_id = c.id
         WHERE a.teacher_id = ?
         ORDER BY a.created_at DESC
       `;
             params = [user.userId];
         }
         else {
+            // Students see: standalone assignments they directly joined (have a
+            // submission for), plus every assignment in a classroom they belong to.
             query = `
         SELECT a.*,
           u.name as teacher_name,
+          c.name as classroom_name,
           sub.id as my_submission_id,
           sub.status as my_status
         FROM assignments a
         JOIN users u ON a.teacher_id = u.id
-        JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = ?
+        LEFT JOIN classrooms c ON a.classroom_id = c.id
+        LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = ?
+        WHERE (a.classroom_id IS NULL AND sub.id IS NOT NULL)
+           OR a.classroom_id IN (
+             SELECT classroom_id FROM classroom_members WHERE student_id = ?
+           )
         ORDER BY a.due_date ASC
       `;
-            params = [user.userId];
+            params = [user.userId, user.userId];
         }
         const [rows] = await database_1.default.query(query, params);
         res.json(rows);
@@ -105,9 +115,10 @@ router.post('/join/:code', auth_1.authMiddleware, async (req, res) => {
             res.status(400).json({ error: '이미 참여한 과제입니다' });
             return;
         }
-        // Join (create submission entry)
+        // Register the student to the assignment WITHOUT marking them as writing.
+        // Status stays ASSIGNED until they actually open the editor.
         const submissionId = (0, uuid_1.v4)();
-        await database_1.default.query(`INSERT INTO submissions (id, assignment_id, student_id, final_markdown, status) VALUES (?, ?, ?, ?, ?)`, [submissionId, assignmentId, user.userId, '', 'IN_PROGRESS']);
+        await database_1.default.query(`INSERT INTO submissions (id, assignment_id, student_id, final_markdown, status) VALUES (?, ?, ?, ?, ?)`, [submissionId, assignmentId, user.userId, '', 'ASSIGNED']);
         res.json({ message: '과제에 참여했습니다', assignmentId, submissionId });
     }
     catch (err) {
@@ -137,15 +148,28 @@ router.get('/:id', auth_1.authMiddleware, async (req, res) => {
 router.post('/', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
     try {
         const user = req.user;
-        const { title, dueDate, timeLimit, textLimit, maxScore, templateText, mode } = req.body;
+        const { title, dueDate, timeLimit, textLimit, maxScore, templateText, mode, classroomId } = req.body;
         if (!title || !dueDate || !timeLimit) {
             res.status(400).json({ error: '필수 항목을 모두 입력해 주세요' });
             return;
         }
+        // If targeting a classroom, the teacher must own it.
+        if (classroomId) {
+            const [cRows] = await database_1.default.query('SELECT teacher_id FROM classrooms WHERE id = ?', [classroomId]);
+            const classroom = cRows[0];
+            if (!classroom) {
+                res.status(404).json({ error: '학급을 찾을 수 없습니다' });
+                return;
+            }
+            if (classroom.teacher_id !== user.userId) {
+                res.status(403).json({ error: '본인 소유의 학급에만 과제를 만들 수 있습니다' });
+                return;
+            }
+        }
         const id = (0, uuid_1.v4)();
         const joinCode = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 6).toUpperCase();
-        await database_1.default.query(`INSERT INTO assignments (id, teacher_id, title, due_date, time_limit, text_limit, max_score, template_text, mode, join_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, user.userId, title, new Date(dueDate), timeLimit || 60, textLimit || 3000, maxScore || 100, templateText || '', mode || 'STANDARD', joinCode]);
+        await database_1.default.query(`INSERT INTO assignments (id, teacher_id, classroom_id, title, due_date, time_limit, text_limit, max_score, template_text, mode, join_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, user.userId, classroomId || null, title, new Date(dueDate), timeLimit || 60, textLimit || 3000, maxScore || 100, templateText || '', mode || 'STANDARD', joinCode]);
         const [rows] = await database_1.default.query(`SELECT a.*, 
          0 as submission_count,
          u.name as teacher_name

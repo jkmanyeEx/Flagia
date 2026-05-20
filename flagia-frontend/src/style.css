@@ -37,6 +37,8 @@ html {
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Stop the whole-page rubber-band bounce that revealed empty space. */
+  overscroll-behavior: none;
 }
 
 body {
@@ -791,12 +793,17 @@ select.input {
 .sidebar-logo-icon {
   width: 32px;
   height: 32px;
-  background: var(--color-primary);
   border-radius: 8px;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+.sidebar-logo-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .sidebar-logo-text {
   font-size: 1.25rem;
@@ -929,6 +936,7 @@ select.input {
 .app-content-area {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0;
 }
 
@@ -945,33 +953,23 @@ select.input {
   top: 0;
   z-index: 30;
 }
-.mobile-menu-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  padding: 0.25rem;
+.mobile-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.mobile-logo-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
 }
 .mobile-logo-text {
   font-size: 1.125rem;
   font-weight: 800;
   color: var(--color-text-primary);
   letter-spacing: -0.025em;
-}
-.mobile-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.875rem;
 }
 
 /* Mobile Overlay */

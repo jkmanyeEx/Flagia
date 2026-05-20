@@ -11,10 +11,7 @@ const router = useRouter()
       <div class="landing-nav-inner">
         <div class="landing-logo">
           <div class="landing-logo-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-              <line x1="4" y1="22" x2="4" y2="15"/>
-            </svg>
+            <img src="/logo.jpg" alt="Flagia" />
           </div>
           <span>Flagia</span>
         </div>
@@ -39,7 +36,7 @@ const router = useRouter()
         </div>
         <h1 class="landing-hero-title">
           학생이 <span class="gradient-text">직접 쓴 글</span>인지<br/>
-          AI가 실시간으로 판별합니다
+          실시간으로 판별합니다
         </h1>
         <p class="landing-hero-desc">
           Flagia는 키 입력 패턴, 붙여넣기 감지, 세션 분석 등 다층 행동 분석으로<br/>
@@ -207,10 +204,15 @@ const router = useRouter()
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: var(--color-primary);
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.landing-logo-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .landing-nav-actions {
   display: flex;

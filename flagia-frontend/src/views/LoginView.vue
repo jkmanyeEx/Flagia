@@ -57,11 +57,8 @@ function toggleMode() {
       <div class="relative z-10 flex flex-col justify-between p-12 text-white">
         <!-- Logo -->
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-              <line x1="4" y1="22" x2="4" y2="15"/>
-            </svg>
+          <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center">
+            <img src="/logo.jpg" alt="Flagia" class="w-full h-full object-cover" />
           </div>
           <span class="text-2xl font-bold tracking-tight">Flagia</span>
         </div>
@@ -104,11 +101,8 @@ function toggleMode() {
       <div class="w-full max-w-md">
         <!-- Mobile logo -->
         <div class="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-          <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-              <line x1="4" y1="22" x2="4" y2="15"/>
-            </svg>
+          <div class="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center">
+            <img src="/logo.jpg" alt="Flagia" class="w-full h-full object-cover" />
           </div>
           <span class="text-xl font-bold tracking-tight">Flagia</span>
         </div>

@@ -1017,15 +1017,15 @@ const backLabel = computed(() =>
                 과제 점수 입력 (최대 {{ submission?.maxScore || 100 }}점)
               </label>
               <div class="relative flex items-center">
-                <input 
-                  type="number" 
-                  v-model.number="score" 
+                <input
+                  type="number"
+                  v-model.number="score"
                   min="0"
                   :max="submission?.maxScore || 100"
                   step="1"
                   required
                   placeholder="점수 입력"
-                  class="input w-full pr-12 focus:border-primary"
+                  class="input w-full pr-12 focus:border-primary no-spinner"
                 />
                 <span class="absolute right-3 text-xs font-mono text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
               </div>
@@ -1111,3 +1111,17 @@ const backLabel = computed(() =>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Hide the native number-input spinner arrows on the grade field — they
+   overlapped the "/ 100" suffix and looked like a stray arrow. */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+</style>

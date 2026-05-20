@@ -45,6 +45,7 @@ function goHome() {
 const activeNav = computed(() => {
   const n = route.name as string
   if (n === 'analysis') return 'analysis'
+  if (n === 'classrooms' || n === 'classroom-detail') return 'classrooms'
   if (user.value?.role === 'TEACHER') {
     if (n === 'teacher' || n === 'dashboard') return 'teacher-dash'
     return ''
@@ -88,17 +89,13 @@ const activeNav = computed(() => {
     <aside class="app-sidebar" :class="{ 'open': isSidebarOpen }">
       <div class="sidebar-brand" @click="goHome">
         <div class="sidebar-logo-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-            <line x1="4" y1="22" x2="4" y2="15"/>
-          </svg>
+          <img src="/logo.jpg" alt="Flagia" />
         </div>
         <span class="sidebar-logo-text">Flagia</span>
       </div>
 
       <!-- User Profile Card -->
       <div class="sidebar-profile">
-        <div class="sidebar-avatar">{{ user?.name?.charAt(0) || '?' }}</div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ user?.name }}</span>
           <span class="sidebar-user-role">{{ user?.role === 'TEACHER' ? '교사 계정' : '학생 계정' }}</span>
@@ -107,6 +104,12 @@ const activeNav = computed(() => {
 
       <!-- Navigation links -->
       <div class="sidebar-nav">
+        <!-- Classrooms (both roles) -->
+        <button @click="router.push('/classrooms')" class="sidebar-nav-item" :class="{ active: activeNav === 'classrooms' }">
+          <span class="item-icon">🏫</span>
+          <span class="item-label">학급</span>
+        </button>
+
         <!-- Teacher-specific links -->
         <template v-if="user?.role === 'TEACHER'">
           <button @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
@@ -162,15 +165,10 @@ const activeNav = computed(() => {
       
       <!-- Mobile Top Header -->
       <header class="mobile-header md:hidden">
-        <button @click="isSidebarOpen = !isSidebarOpen" class="mobile-menu-btn">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
-        </button>
-        <span class="mobile-logo-text">Flagia</span>
-        <div class="mobile-avatar">{{ user?.name?.charAt(0) || '?' }}</div>
+        <div class="mobile-brand" @click="goHome">
+          <img src="/logo.jpg" alt="Flagia" class="mobile-logo-img" />
+          <span class="mobile-logo-text">Flagia</span>
+        </div>
       </header>
 
       <!-- Content Body -->
@@ -203,10 +201,12 @@ const activeNav = computed(() => {
 
     <!-- ─── Guide Modal ─── -->
     <div v-if="showGuideModal" class="modal-overlay" @click.self="showGuideModal = false">
-      <div class="modal-card max-w-xl w-full p-6 bg-white rounded-xl shadow-2xl relative">
-        <button @click="showGuideModal = false" class="modal-close-btn">&times;</button>
-        <h3 class="text-lg font-bold text-text-primary mb-4">📖 Flagia 이용 가이드</h3>
-        
+      <div class="modal-content max-w-xl mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-text-primary">📖 Flagia 이용 가이드</h3>
+          <button @click="showGuideModal = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
+
         <div class="space-y-4 text-sm text-text-secondary overflow-y-auto max-h-[60vh] pr-2">
           <section>
             <h4 class="font-semibold text-text-primary mb-1">🔍 Flagia Score (0–100)</h4>
@@ -259,9 +259,11 @@ const activeNav = computed(() => {
 
     <!-- ─── Settings Modal ─── -->
     <div v-if="showSettingsModal" class="modal-overlay" @click.self="showSettingsModal = false">
-      <div class="modal-card max-w-md w-full p-6 bg-white rounded-xl shadow-2xl relative">
-        <button @click="showSettingsModal = false" class="modal-close-btn">&times;</button>
-        <h3 class="text-lg font-bold text-text-primary mb-4">⚙️ 시스템 설정</h3>
+      <div class="modal-content max-w-md mx-4 p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-text-primary">⚙️ 시스템 설정</h3>
+          <button @click="showSettingsModal = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
 
         <div class="space-y-5 text-sm text-text-secondary">
           <!-- Account info (real data) -->

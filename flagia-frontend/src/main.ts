@@ -17,6 +17,8 @@ const router = createRouter({
     { path: '/dashboard', name: 'dashboard', component: () => import('./views/DashboardRouter.vue') },
     { path: '/teacher', name: 'teacher', component: () => import('./views/TeacherDashboard.vue') },
     { path: '/student', name: 'student-home', component: () => import('./views/StudentHome.vue') },
+    { path: '/classrooms', name: 'classrooms', component: () => import('./views/Classrooms.vue') },
+    { path: '/classrooms/:id', name: 'classroom-detail', component: () => import('./views/ClassroomDetail.vue') },
     { path: '/editor/:assignmentId', name: 'editor', component: () => import('./views/StudentEditor.vue') },
     { path: '/analysis/:submissionId', name: 'analysis', component: () => import('./views/SubmissionAnalysis.vue') },
     { path: '/join/:code', name: 'join', component: () => import('./views/JoinAssignment.vue') },
@@ -52,9 +54,16 @@ router.beforeEach(async (to) => {
     return { name: 'dashboard' }
   }
 
-  // Teacher-only route guard
-  if (to.name === 'teacher' && user.value?.role !== 'TEACHER') {
+  // Role-based access control: keep each role out of the other's pages.
+  const role = user.value?.role
+  const teacherOnlyRoutes = ['teacher']
+  const studentOnlyRoutes = ['student-home', 'editor', 'join']
+
+  if (teacherOnlyRoutes.includes(to.name as string) && role !== 'TEACHER') {
     return { name: 'student-home' }
+  }
+  if (studentOnlyRoutes.includes(to.name as string) && role !== 'STUDENT') {
+    return { name: 'teacher' }
   }
 })
 

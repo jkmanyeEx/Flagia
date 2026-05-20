@@ -26,8 +26,40 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     const submissions = existing as any[];
 
     if (submissions.length > 0) {
-      res.json(submissions[0]);
+      const sub = submissions[0];
+      // Opening the editor on an ASSIGNED submission means writing has begun.
+      if (sub.status === 'ASSIGNED') {
+        await pool.query(
+          `UPDATE submissions SET status = 'IN_PROGRESS' WHERE id = ? AND status = 'ASSIGNED'`,
+          [sub.id]
+        );
+        sub.status = 'IN_PROGRESS';
+        notifySubmissionsUpdate(assignmentId, user.userId);
+      }
+      res.json(sub);
       return;
+    }
+
+    // Authorization for classroom assignments: the student must be a member.
+    // Standalone assignments (classroom_id NULL) keep the legacy open behavior.
+    const [aRows] = await pool.query(
+      'SELECT classroom_id FROM assignments WHERE id = ?',
+      [assignmentId]
+    );
+    const assignment = (aRows as any[])[0];
+    if (!assignment) {
+      res.status(404).json({ error: '과제를 찾을 수 없습니다' });
+      return;
+    }
+    if (assignment.classroom_id) {
+      const [m] = await pool.query(
+        'SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?',
+        [assignment.classroom_id, user.userId]
+      );
+      if ((m as any[]).length === 0) {
+        res.status(403).json({ error: '학급에 참여한 학생만 과제를 시작할 수 있습니다' });
+        return;
+      }
     }
 
     // Create new submission

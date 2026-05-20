@@ -23,8 +23,30 @@ router.post('/', auth_1.authMiddleware, async (req, res) => {
         const [existing] = await database_1.default.query('SELECT * FROM submissions WHERE assignment_id = ? AND student_id = ?', [assignmentId, user.userId]);
         const submissions = existing;
         if (submissions.length > 0) {
-            res.json(submissions[0]);
+            const sub = submissions[0];
+            // Opening the editor on an ASSIGNED submission means writing has begun.
+            if (sub.status === 'ASSIGNED') {
+                await database_1.default.query(`UPDATE submissions SET status = 'IN_PROGRESS' WHERE id = ? AND status = 'ASSIGNED'`, [sub.id]);
+                sub.status = 'IN_PROGRESS';
+                (0, websocket_1.notifySubmissionsUpdate)(assignmentId, user.userId);
+            }
+            res.json(sub);
             return;
+        }
+        // Authorization for classroom assignments: the student must be a member.
+        // Standalone assignments (classroom_id NULL) keep the legacy open behavior.
+        const [aRows] = await database_1.default.query('SELECT classroom_id FROM assignments WHERE id = ?', [assignmentId]);
+        const assignment = aRows[0];
+        if (!assignment) {
+            res.status(404).json({ error: '과제를 찾을 수 없습니다' });
+            return;
+        }
+        if (assignment.classroom_id) {
+            const [m] = await database_1.default.query('SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?', [assignment.classroom_id, user.userId]);
+            if (m.length === 0) {
+                res.status(403).json({ error: '학급에 참여한 학생만 과제를 시작할 수 있습니다' });
+                return;
+            }
         }
         // Create new submission
         const id = (0, uuid_1.v4)();

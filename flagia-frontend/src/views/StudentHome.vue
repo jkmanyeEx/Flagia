@@ -167,7 +167,8 @@ watch(() => route.query.filter, (newFilter) => {
 const filteredAssignments = computed(() => {
   let list = assignments.value.filter(a => {
     const sub = submissionMap.value[a.id]
-    const status = sub ? sub.status : 'NOT_STARTED'
+    // ASSIGNED = joined but never opened the editor → treat as not started.
+    const status = sub && sub.status !== 'ASSIGNED' ? sub.status : 'NOT_STARTED'
     if (filterStatus.value === 'ALL') return true
     if (filterStatus.value === 'NOT_STARTED') return status === 'NOT_STARTED'
     if (filterStatus.value === 'IN_PROGRESS') return status === 'IN_PROGRESS'
@@ -193,7 +194,7 @@ const filteredAssignments = computed(() => {
 
 function getStatusInfo(assignment: any) {
   const sub = submissionMap.value[assignment.id]
-  if (!sub) return { label: '미시작', color: 'text-text-muted', bg: 'bg-background' }
+  if (!sub || sub.status === 'ASSIGNED') return { label: '미시작', color: 'text-text-muted', bg: 'bg-background' }
   if (sub.status === 'SUBMITTED') return { label: '제출 완료', color: 'text-flag-green', bg: 'bg-flag-green-bg' }
   if (sub.status === 'FORCE_CLOSED') return { label: '자동 제출', color: 'text-flag-amber', bg: 'bg-flag-amber-bg' }
   return { label: '작성 중', color: 'text-primary', bg: 'bg-primary-light' }
@@ -323,30 +324,30 @@ function formatDate(d: string) {
             <span class="badge badge-green text-xs py-0">{{ getModeLabel(assignment.mode) }}</span>
           </div>
 
-          <!-- Score if submitted -->
-          <div v-if="submissionMap[assignment.id]?.flagia_score != null" class="flex items-center gap-3 mt-3 text-sm">
-            <span class="font-medium text-text-secondary">Flagia 점수:</span>
-            <span class="font-bold" :class="{
-              'text-flag-green': submissionMap[assignment.id].flag_status === 'GREEN',
-              'text-flag-amber': submissionMap[assignment.id].flag_status === 'AMBER',
-              'text-flag-red': submissionMap[assignment.id].flag_status === 'RED',
-            }">
-              {{ Number(submissionMap[assignment.id].flagia_score).toFixed(1) }}
-            </span>
-            <span class="badge" :class="{
-              'badge-green': submissionMap[assignment.id].flag_status === 'GREEN',
-              'badge-amber': submissionMap[assignment.id].flag_status === 'AMBER',
-              'badge-red': submissionMap[assignment.id].flag_status === 'RED',
-            }">
-              {{ submissionMap[assignment.id].flag_status === 'GREEN' ? '🟢 안전' :
-                 submissionMap[assignment.id].flag_status === 'AMBER' ? '🟡 주의' : '🔴 위험' }}
-            </span>
+          <!-- Scores when submitted: graded score is primary, integrity is subtle -->
+          <div v-if="submissionMap[assignment.id] && (submissionMap[assignment.id].status === 'SUBMITTED' || submissionMap[assignment.id].status === 'FORCE_CLOSED')"
+            class="flex items-center gap-4 mt-3">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-text-muted">성적</span>
+              <span v-if="submissionMap[assignment.id].score != null" class="font-bold text-lg text-text-primary">
+                {{ Number(submissionMap[assignment.id].score) }}<span class="text-xs font-normal text-text-muted"> / {{ assignment.max_score || 100 }}</span>
+              </span>
+              <span v-else class="text-xs text-text-muted">채점 대기 중</span>
+            </div>
+            <div v-if="submissionMap[assignment.id].flagia_score != null" class="flex items-center gap-1.5 text-xs text-text-muted">
+              <span class="inline-block w-2 h-2 rounded-full" :class="{
+                'bg-flag-green': submissionMap[assignment.id].flag_status === 'GREEN',
+                'bg-flag-amber': submissionMap[assignment.id].flag_status === 'AMBER',
+                'bg-flag-red': submissionMap[assignment.id].flag_status === 'RED',
+              }"></span>
+              무결성 {{ Number(submissionMap[assignment.id].flagia_score).toFixed(0) }}
+            </div>
           </div>
         </div>
 
         <!-- Action -->
         <div class="flex-shrink-0">
-          <button v-if="!submissionMap[assignment.id] || submissionMap[assignment.id]?.status === 'IN_PROGRESS'"
+          <button v-if="!submissionMap[assignment.id] || submissionMap[assignment.id]?.status === 'IN_PROGRESS' || submissionMap[assignment.id]?.status === 'ASSIGNED'"
             @click="goToEditor(assignment.id)"
             class="btn btn-primary btn-sm">
             {{ submissionMap[assignment.id]?.status === 'IN_PROGRESS' ? '이어쓰기' : '작성 시작' }}

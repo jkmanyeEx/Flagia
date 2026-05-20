@@ -179,15 +179,29 @@ function handlePaste(e: ClipboardEvent, cursor?: number) {
   })
 }
 
-function handleBlur() {
-  // Suppress the blur event that fires when the user clicks "제출" — the
-  // submit-button click steals focus from the editor before the submit
-  // network call begins. Treating that as an editor leave produces a
-  // spurious yellow bucket at the end of every timeline.
-  if (submitting.value || showSubmitModal.value || isLocked.value) return
+// "Editor leave" means leaving the browser tab/window (e.g. to look something
+// up or copy from an AI tool) — NOT losing focus from the contenteditable.
+// Clicking a toolbar button or the submit button blurs the editor element but
+// keeps the tab focused, so those must not count. We therefore track the tab
+// (document.visibilitychange) and the window (window blur/focus) instead of
+// the editor's own @blur/@focus.
+let windowBlurred = false
+
+function handleWindowBlur() {
+  if (isLocked.value || submitting.value) return
+  if (windowBlurred) return
+  windowBlurred = true
   pushEvent('blur')
 }
-function handleFocus() { pushEvent('focus') }
+function handleWindowFocus() {
+  if (!windowBlurred) return
+  windowBlurred = false
+  pushEvent('focus')
+}
+function handleVisibility() {
+  if (document.visibilityState === 'hidden') handleWindowBlur()
+  else handleWindowFocus()
+}
 
 // ── Toolbar actions ──
 // Handled by RichTextEditor natively now
@@ -302,6 +316,9 @@ onMounted(async () => {
   }
 
   window.addEventListener('beforeunload', beaconSubmit)
+  window.addEventListener('blur', handleWindowBlur)
+  window.addEventListener('focus', handleWindowFocus)
+  document.addEventListener('visibilitychange', handleVisibility)
 })
 
 onBeforeUnmount(() => {
@@ -311,6 +328,9 @@ onBeforeUnmount(() => {
   flushEvents()
   ws?.close()
   window.removeEventListener('beforeunload', beaconSubmit)
+  window.removeEventListener('blur', handleWindowBlur)
+  window.removeEventListener('focus', handleWindowFocus)
+  document.removeEventListener('visibilitychange', handleVisibility)
 })
 
 const hasUnsavedChanges = computed(() => {
@@ -419,8 +439,6 @@ async function confirmSubmit() {
           placeholder="여기에 글을 작성하세요..."
           @keydown="handleKeydown"
           @paste="handlePaste"
-          @blur="handleBlur"
-          @focus="handleFocus"
         />
         
         <!-- Text stats & limit warning -->

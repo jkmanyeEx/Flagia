@@ -10,6 +10,7 @@ const websocket_1 = require("./websocket");
 const auth_1 = __importDefault(require("./routes/auth"));
 const assignments_1 = __importDefault(require("./routes/assignments"));
 const submissions_1 = __importDefault(require("./routes/submissions"));
+const classrooms_1 = __importDefault(require("./routes/classrooms"));
 const database_1 = __importDefault(require("./database"));
 const app = (0, express_1.default)();
 const PORT = parseInt(process.env.PORT || '3502', 10);
@@ -25,6 +26,7 @@ app.get('/api/time', (_req, res) => {
 });
 // Routes
 app.use('/api/auth', auth_1.default);
+app.use('/api/classrooms', classrooms_1.default);
 app.use('/api/assignments', assignments_1.default);
 app.use('/api/submissions', submissions_1.default);
 // Create HTTP server and attach WebSocket

@@ -5,6 +5,7 @@ import { initWebSocket } from './websocket';
 import authRouter from './routes/auth';
 import assignmentsRouter from './routes/assignments';
 import submissionsRouter from './routes/submissions';
+import classroomsRouter from './routes/classrooms';
 import pool from './database';
 
 const app = express();
@@ -25,6 +26,7 @@ app.get('/api/time', (_req, res) => {
 
 // Routes
 app.use('/api/auth', authRouter);
+app.use('/api/classrooms', classroomsRouter);
 app.use('/api/assignments', assignmentsRouter);
 app.use('/api/submissions', submissionsRouter);
 
