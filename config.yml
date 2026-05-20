@@ -1,0 +1,9 @@
+tunnel: e3054d16-c6b3-4003-b425-61c7d2d464b3
+credentials-file: /Users/jkmanye/.cloudflared/e3054d16-c6b3-4003-b425-61c7d2d464b3.json
+
+ingress:
+  - hostname: flagia.devmeko.xyz
+    service: http://localhost:5173
+  - hostname: flagiaapi.devmeko.xyz
+    service: http://localhost:3000
+  - service: http_status:404
