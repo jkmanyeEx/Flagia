@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 
-const API_URL = 'http://localhost:3502';
-const WS_URL = 'ws://localhost:3502/ws';
+const API_URL = 'http://localhost:3000';
+const WS_URL = 'ws://localhost:3000/ws';
 
 async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -55,7 +55,7 @@ async function runTest() {
   console.log('- Connecting Teacher to WebSocket...');
   const teacherWs = new WebSocket(WS_URL);
   let teacherMessages: any[] = [];
-  
+
   teacherWs.on('message', (data) => {
     const msg = JSON.parse(data.toString());
     console.log('[Teacher WS Received]:', msg);

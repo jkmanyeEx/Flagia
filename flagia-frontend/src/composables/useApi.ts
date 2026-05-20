@@ -1,5 +1,5 @@
 function resolveApiBase(): string {
-  // In dev mode, Vite proxy handles /api → :3502
+  // In dev mode, Vite proxy handles /api → :3000
   if (import.meta.env.DEV) return ''
 
   // In production, resolve based on current hostname
@@ -11,7 +11,7 @@ function resolveApiBase(): string {
     return 'https://api.flagia.kr'
   }
   // Local production (pm2 serve) — point to backend port
-  return `${window.location.protocol}//${host}:3502`
+  return `${window.location.protocol}//${host}:3000`
 }
 
 const API_BASE = resolveApiBase()

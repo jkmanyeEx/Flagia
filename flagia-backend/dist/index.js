@@ -13,7 +13,7 @@ const submissions_1 = __importDefault(require("./routes/submissions"));
 const classrooms_1 = __importDefault(require("./routes/classrooms"));
 const database_1 = __importDefault(require("./database"));
 const app = (0, express_1.default)();
-const PORT = parseInt(process.env.PORT || '3502', 10);
+const PORT = parseInt(process.env.PORT || '3000', 10);
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
 app.use(express_1.default.json({ limit: '10mb' }));
 // Health check

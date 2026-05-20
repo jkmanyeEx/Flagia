@@ -30,7 +30,7 @@ export function useWebSocket() {
       const hostname = location.hostname
       wsHost = hostname === 'flagia.devmeko.xyz'
         ? 'flagiaapi.devmeko.xyz'
-        : `${hostname}:3502`
+        : `${hostname}:3000`
     }
     ws = new WebSocket(`${protocol}//${wsHost}/ws`)
 

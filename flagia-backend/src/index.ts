@@ -9,7 +9,7 @@ import classroomsRouter from './routes/classrooms';
 import pool from './database';
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3502', 10);
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));

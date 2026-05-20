@@ -4,7 +4,7 @@ const request = (method, path, body, token) => {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
-      port: 3502,
+      port: 3000,
       path: '/api' + path,
       method: method,
       headers: {
@@ -82,7 +82,7 @@ const request = (method, path, body, token) => {
     console.log("\n6. Fetching Student Assignments...");
     const studentList = await request('GET', '/assignments', null, studentToken);
     console.log(studentList.body.length, "assignments found");
-    if(studentList.body.length > 0) {
+    if (studentList.body.length > 0) {
       console.log("First assignment:", studentList.body[0].title);
     }
 
