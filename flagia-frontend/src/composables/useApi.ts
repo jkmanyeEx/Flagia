@@ -1,20 +1,4 @@
-function resolveApiBase(): string {
-  // In dev mode, Vite proxy handles /api → :3000
-  if (import.meta.env.DEV) return ''
-
-  // In production, resolve based on current hostname
-  const host = window.location.hostname
-  if (host === 'flagia.devmeko.xyz') {
-    return 'https://flagiaapi.devmeko.xyz'
-  }
-  else if (host === 'flagia.kr') {
-    return 'https://api.flagia.kr'
-  }
-  // Local production (pm2 serve) — point to backend port
-  return `${window.location.protocol}//${host}:3000`
-}
-
-const API_BASE = resolveApiBase()
+import { API_BASE } from './apiHost'
 
 export async function api(path: string, options: { method?: string; body?: any; token?: string } = {}) {
   const token = options.token || localStorage.getItem('flagia_token')

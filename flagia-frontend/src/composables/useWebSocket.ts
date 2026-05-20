@@ -10,6 +10,7 @@
 
 import { ref, onUnmounted } from 'vue'
 import type { TelemetryEvent } from './useKeystrokeCapture'
+import { resolveWsUrl } from './apiHost'
 
 export function useWebSocket() {
   const connected = ref(false)
@@ -24,15 +25,7 @@ export function useWebSocket() {
   function connect(token: string) {
     if (ws && ws.readyState === WebSocket.OPEN) return
 
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    let wsHost = location.host
-    if (import.meta.env.PROD) {
-      const hostname = location.hostname
-      wsHost = hostname === 'flagia.devmeko.xyz'
-        ? 'flagiaapi.devmeko.xyz'
-        : `${hostname}:3000`
-    }
-    ws = new WebSocket(`${protocol}//${wsHost}/ws`)
+    ws = new WebSocket(resolveWsUrl())
 
     ws.onopen = () => {
       connected.value = true

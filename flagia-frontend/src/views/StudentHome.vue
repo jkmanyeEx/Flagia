@@ -3,17 +3,10 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
-function resolveApiBase(): string {
-  if (import.meta.env.DEV) return ''
-  const host = window.location.hostname
-  if (host === 'flagia.devmeko.xyz') return 'https://flagiaapi.devmeko.xyz'
-  return `${window.location.protocol}//${host}:3000`
-}
+import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
 
 const API = resolveApiBase()
-const WS_URL = import.meta.env.PROD
-  ? (window.location.hostname === 'flagia.devmeko.xyz' ? 'wss://flagiaapi.devmeko.xyz/ws' : `ws://${window.location.hostname}:3000/ws`)
-  : 'ws://localhost:3000/ws'
+const WS_URL = resolveWsUrl()
 const router = useRouter()
 const route = useRoute()
 const { user, token } = useAuth()
