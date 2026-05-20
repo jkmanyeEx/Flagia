@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import RichTextEditor from '../components/RichTextEditor.vue'
 
@@ -16,6 +16,7 @@ const WS_URL = import.meta.env.PROD
   ? (window.location.hostname === 'flagia.devmeko.xyz' ? 'wss://flagiaapi.devmeko.xyz/ws' : `ws://${window.location.hostname}:3502/ws`)
   : 'ws://localhost:3502/ws'
 const router = useRouter()
+const route = useRoute()
 const { user, token } = useAuth()
 
 // State
@@ -143,6 +144,13 @@ onMounted(async () => {
     }
   } catch { /* noop */ } finally { loading.value = false }
   connectWS()
+
+  // Returning from an analysis report? Re-open that assignment's submissions.
+  const aid = route.query.assignment as string | undefined
+  if (aid) {
+    const target = assignments.value.find((a: any) => a.id === aid)
+    if (target) selectAssignment(target)
+  }
 })
 
 onUnmounted(() => {

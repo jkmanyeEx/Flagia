@@ -167,7 +167,9 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
         res.json({
           submission: {
             id: submission.id,
+            assignmentId: submission.assignment_id,
             assignmentTitle: submission.assignment_title,
+            templateText: submission.template_text,
             studentName: submission.student_name,
             studentEmail: submission.student_email,
             status: submission.status,
@@ -222,7 +224,9 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
     res.json({
       submission: {
         id: submission.id,
+        assignmentId: submission.assignment_id,
         assignmentTitle: submission.assignment_title,
+        templateText: submission.template_text,
         studentName: submission.student_name,
         studentEmail: submission.student_email,
         status: submission.status,

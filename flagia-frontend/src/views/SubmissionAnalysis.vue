@@ -68,6 +68,7 @@ function componentIcon(key: string) {
     revisionIntensity: '✏️',
     externalContent: '📋',
     focusDuration: '👁️',
+    writingTime: '⏱️',
   }[key] || '📊'
 }
 
@@ -230,6 +231,52 @@ function setSpeed(s: number) {
   }
 }
 
+// ── Hangul IME automaton for replay ──
+// Browser keydown events during Korean composition arrive as individual
+// compatibility jamo (e.g. ㅎ ㅏ ㄴ for 한). We assemble them into syllables
+// using the standard 2-set Hangul automaton.
+const CHO_LIST  = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+const JUNG_LIST = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ']
+const JONG_LIST = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+const COMPOUND_JUNG: Record<string, string> = {
+  'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ',
+}
+const DECOMPOSE_JUNG: Record<string, [string, string]> = {
+  'ㅘ':['ㅗ','ㅏ'],'ㅙ':['ㅗ','ㅐ'],'ㅚ':['ㅗ','ㅣ'],'ㅝ':['ㅜ','ㅓ'],'ㅞ':['ㅜ','ㅔ'],'ㅟ':['ㅜ','ㅣ'],'ㅢ':['ㅡ','ㅣ'],
+}
+const COMPOUND_JONG: Record<string, string> = {
+  'ㄱㅅ':'ㄳ','ㄴㅈ':'ㄵ','ㄴㅎ':'ㄶ','ㄹㄱ':'ㄺ','ㄹㅁ':'ㄻ','ㄹㅂ':'ㄼ','ㄹㅅ':'ㄽ','ㄹㅌ':'ㄾ','ㄹㅍ':'ㄿ','ㄹㅎ':'ㅀ','ㅂㅅ':'ㅄ',
+}
+const DECOMPOSE_JONG: Record<string, [string, string]> = {
+  'ㄳ':['ㄱ','ㅅ'],'ㄵ':['ㄴ','ㅈ'],'ㄶ':['ㄴ','ㅎ'],'ㄺ':['ㄹ','ㄱ'],'ㄻ':['ㄹ','ㅁ'],'ㄼ':['ㄹ','ㅂ'],'ㄽ':['ㄹ','ㅅ'],'ㄾ':['ㄹ','ㅌ'],'ㄿ':['ㄹ','ㅍ'],'ㅀ':['ㄹ','ㅎ'],'ㅄ':['ㅂ','ㅅ'],
+}
+// Keys that are not typed text — never render them in the replay canvas.
+const NON_CONTENT_KEYS = new Set([
+  'Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape',
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+  'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete',
+  'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+  'ContextMenu', 'Pause', 'ScrollLock', 'NumLock', 'PrintScreen',
+  'Process', 'Unidentified', 'Dead',
+])
+function isJamo(k: string) { return /^[ㄱ-ㆎ]$/.test(k) }
+function isJung(k: string) { return JUNG_LIST.includes(k) }
+
+// The student editor is pre-filled with the assignment's guideline template,
+// so keystrokes begin after it. Seed the replay with that plain text so the
+// reconstructed document isn't missing its opening section.
+const templatePlain = computed(() =>
+  (submission.value?.templateText || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+)
+function composeSyllable(cho: string, jung: string, jong: string): string {
+  const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
+  if (ci < 0 || ji < 0 || gi < 0) return (cho || '') + (jung || '') + (jong || '')
+  return String.fromCharCode(0xAC00 + (ci * 21 + ji) * 28 + gi)
+}
+
 const replayState = computed(() => {
   if (!events.value || events.value.length === 0) {
     return {
@@ -244,7 +291,15 @@ const replayState = computed(() => {
   }
 
   const thresholdTime = minTime.value + replayCurrentMs.value
-  let text = ''
+  let committed = templatePlain.value
+  // Active composition buffer
+  let cho = '', jung = '', jong = ''
+  const hasBuf = () => cho || jung || jong
+  const renderBuf = () => hasBuf() ? composeSyllable(cho, jung, jong) : ''
+  const flushBuf = () => {
+    if (hasBuf()) committed += renderBuf()
+    cho = ''; jung = ''; jong = ''
+  }
   let keystrokeCount = 0
   let pasteCount = 0
   let blurCount = 0
@@ -260,39 +315,103 @@ const replayState = computed(() => {
     if (e.type === 'keydown') {
       keystrokeCount++
       const key = e.meta?.key
-      const pos = e.meta?.cursorPosition ?? text.length
-      
+
+      // Skip keyboard shortcuts (Ctrl/Cmd/Alt held) and control/navigation
+      // keys so they don't leak into the reconstructed text.
+      if (e.meta?.mod || (key && NON_CONTENT_KEYS.has(key))) {
+        continue
+      }
+
       if (key === 'Backspace') {
-        if (pos > 0 && text.length >= pos) {
-          text = text.slice(0, pos - 1) + text.slice(pos)
+        // Delete one logical step from the composing buffer first,
+        // then fall through to committed text.
+        if (jong) {
+          const d = DECOMPOSE_JONG[jong]
+          jong = d ? d[0] : ''
+        } else if (jung) {
+          const d = DECOMPOSE_JUNG[jung]
+          jung = d ? d[0] : ''
+        } else if (cho) {
+          cho = ''
         } else {
-          text = text.slice(0, -1)
+          committed = committed.slice(0, -1)
         }
       } else if (key === 'Enter') {
-        if (text.length >= pos) {
-          text = text.slice(0, pos) + '\n' + text.slice(pos)
+        flushBuf()
+        committed += '\n'
+      } else if (key && isJamo(key)) {
+        if (isJung(key)) {
+          // Vowel
+          if (!cho) {
+            // Standalone vowel — no IME initial. Commit raw.
+            flushBuf()
+            committed += key
+          } else if (!jung) {
+            jung = key
+          } else if (!jong) {
+            const cj = COMPOUND_JUNG[jung + key]
+            if (cj) {
+              jung = cj
+            } else {
+              flushBuf()
+              committed += key
+            }
+          } else {
+            // cho+jung+jong, new vowel → last jong (or its tail) becomes
+            // the new syllable's cho, paired with this vowel.
+            const dj = DECOMPOSE_JONG[jong]
+            let newCho: string
+            if (dj) {
+              jong = dj[0]
+              newCho = dj[1]
+            } else {
+              newCho = jong
+              jong = ''
+            }
+            flushBuf()
+            cho = newCho
+            jung = key
+          }
         } else {
-          text += '\n'
+          // Consonant
+          if (!cho) {
+            cho = key
+          } else if (!jung) {
+            // Two consonants without a vowel — commit the first, start new.
+            flushBuf()
+            cho = key
+          } else if (!jong) {
+            if (JONG_LIST.includes(key)) {
+              jong = key
+            } else {
+              flushBuf()
+              cho = key
+            }
+          } else {
+            const cjong = COMPOUND_JONG[jong + key]
+            if (cjong) {
+              jong = cjong
+            } else {
+              flushBuf()
+              cho = key
+            }
+          }
         }
       } else if (key && key.length === 1) {
-        if (text.length >= pos) {
-          text = text.slice(0, pos) + key + text.slice(pos)
-        } else {
-          text += key
-        }
+        // Plain ASCII / printable character.
+        flushBuf()
+        committed += key
       }
+      // Modifier / navigation keys: ignored (no buffer change).
     } else if (e.type === 'paste') {
+      flushBuf()
       pasteCount++
       const len = e.meta?.pasteLength || 0
-      const pos = e.meta?.cursorPosition ?? text.length
-      const pasteStr = ` [📋 붙여넣기: ${len}자] `
-      if (text.length >= pos) {
-        text = text.slice(0, pos) + pasteStr + text.slice(pos)
-      } else {
-        text += pasteStr
-      }
+      const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
+      committed += pastedText
       logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
     } else if (e.type === 'blur') {
+      flushBuf()
       blurCount++
       activeStatus = '화면 이탈'
       logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`)
@@ -301,6 +420,8 @@ const replayState = computed(() => {
       logs.push(`[${timeStr}] ✏️ 에디터로 복귀`)
     }
   }
+
+  const text = committed + renderBuf()
 
   const windowStart = thresholdTime - 30000
   const recentEvents = events.value.filter(
@@ -371,9 +492,18 @@ watch(data, (newVal) => {
 }, { immediate: true })
 
 function goBack() {
-  if (user.value?.role === 'TEACHER') router.push('/teacher')
-  else router.push('/student')
+  if (user.value?.role === 'TEACHER') {
+    // Return to the specific assignment's submission list, not the bare dashboard.
+    const aid = submission.value?.assignmentId
+    router.push(aid ? `/teacher?assignment=${aid}` : '/teacher')
+  } else {
+    router.push('/student?filter=SUBMITTED')
+  }
 }
+
+const backLabel = computed(() =>
+  user.value?.role === 'TEACHER' ? '제출 목록으로 돌아가기' : '내 과제로 돌아가기'
+)
 </script>
 
 <template>
@@ -396,13 +526,22 @@ function goBack() {
 
   <!-- Analysis Report -->
   <div v-else-if="data" class="max-w-5xl mx-auto px-6 py-8">
-    <!-- Breadcrumb -->
-    <div class="flex items-center gap-2 text-sm text-text-muted mb-6">
-      <button @click="goBack" class="hover:text-primary transition-colors">
-        {{ user?.role === 'TEACHER' ? '대시보드' : '과제 목록' }}
+    <!-- Back button + Breadcrumb -->
+    <div class="flex items-center justify-between mb-6">
+      <button @click="goBack" class="btn btn-outline btn-sm flex items-center gap-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+        <span>{{ backLabel }}</span>
       </button>
-      <span>/</span>
-      <span class="text-text-secondary">분석 리포트</span>
+      <div class="flex items-center gap-2 text-sm text-text-muted">
+        <button @click="goBack" class="hover:text-primary transition-colors">
+          {{ user?.role === 'TEACHER' ? '제출 목록' : '내 과제' }}
+        </button>
+        <span>/</span>
+        <span class="text-text-secondary">분석 리포트</span>
+      </div>
     </div>
 
     <!-- Tab Navigation -->

@@ -17,11 +17,6 @@ const isSidebarOpen = ref(false)
 const showGuideModal = ref(false)
 const showSettingsModal = ref(false)
 
-// Mock settings options
-const gradingScale = ref('100')
-const autoGrade = ref(true)
-const emailNotify = ref(true)
-
 // Close sidebar on route change
 watch(() => route.fullPath, () => {
   isSidebarOpen.value = false
@@ -45,10 +40,23 @@ function goHome() {
   router.push('/dashboard')
 }
 
-// Active nav check
-function isActive(path: string) {
-  return route.path === path || route.path.startsWith(path + '/')
-}
+// Single mutually-exclusive active nav key — avoids multiple items
+// highlighting at once (e.g. 대시보드 + 과제 관리 both lighting up on /teacher).
+const activeNav = computed(() => {
+  const n = route.name as string
+  if (n === 'analysis') return 'analysis'
+  if (user.value?.role === 'TEACHER') {
+    if (n === 'teacher' || n === 'dashboard') return 'teacher-dash'
+    return ''
+  }
+  // Student
+  if (n === 'student-home' || n === 'dashboard') {
+    if (route.query.filter === 'IN_PROGRESS') return 'student-inprogress'
+    if (route.query.filter === 'SUBMITTED') return 'student-submitted'
+    return 'student-all'
+  }
+  return ''
+})
 </script>
 
 <template>
@@ -99,56 +107,33 @@ function isActive(path: string) {
 
       <!-- Navigation links -->
       <div class="sidebar-nav">
-        <button 
-          @click="goHome" 
-          class="sidebar-nav-item" 
-          :class="{ active: route.name === 'dashboard' || (isActive('/teacher') && !route.query.view) || (isActive('/student') && !route.query.filter) }"
-        >
-          <span class="item-icon">📊</span>
-          <span class="item-label">대시보드</span>
-        </button>
-
         <!-- Teacher-specific links -->
         <template v-if="user?.role === 'TEACHER'">
-          <button @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: isActive('/teacher') }">
+          <button @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
             <span class="item-icon">📝</span>
             <span class="item-label">과제 관리</span>
-          </button>
-          <button @click="showGuideModal = true" class="sidebar-nav-item">
-            <span class="item-icon">⚡</span>
-            <span class="item-label">분석 모드 안내</span>
           </button>
         </template>
 
         <!-- Student-specific links -->
         <template v-else>
-          <button @click="router.push('/student?filter=IN_PROGRESS')" class="sidebar-nav-item" :class="{ active: route.query.filter === 'IN_PROGRESS' }">
-            <span class="item-icon">✏️</span>
-            <span class="item-label">진행 중인 과제</span>
-          </button>
-          <button @click="router.push('/student?filter=SUBMITTED')" class="sidebar-nav-item" :class="{ active: route.query.filter === 'SUBMITTED' }">
-            <span class="item-icon">📁</span>
-            <span class="item-label">제출 완료 목록</span>
-          </button>
-          <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: isActive('/student') && !route.query.filter }">
+          <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-all' }">
             <span class="item-icon">📋</span>
             <span class="item-label">전체 과제 목록</span>
           </button>
+          <button @click="router.push('/student?filter=IN_PROGRESS')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-inprogress' }">
+            <span class="item-icon">✏️</span>
+            <span class="item-label">진행 중인 과제</span>
+          </button>
+          <button @click="router.push('/student?filter=SUBMITTED')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-submitted' }">
+            <span class="item-icon">📁</span>
+            <span class="item-label">제출 완료 목록</span>
+          </button>
         </template>
-
-        <!-- Analysis link (always visible, muted when not active) -->
-        <button 
-          @click="route.name === 'analysis' ? null : router.push('/student')"
-          class="sidebar-nav-item"
-          :class="{ active: route.name === 'analysis', 'opacity-40 cursor-default': route.name !== 'analysis' }"
-        >
-          <span class="item-icon">🔍</span>
-          <span class="item-label">분석 리포트</span>
-        </button>
 
         <div class="sidebar-divider"></div>
 
-        <!-- Extra Useful Links -->
+        <!-- Help & Settings -->
         <button @click="showGuideModal = true" class="sidebar-nav-item">
           <span class="item-icon">📖</span>
           <span class="item-label">사용 가이드</span>
@@ -224,26 +209,44 @@ function isActive(path: string) {
         
         <div class="space-y-4 text-sm text-text-secondary overflow-y-auto max-h-[60vh] pr-2">
           <section>
-            <h4 class="font-semibold text-text-primary mb-1">🔍 실시간 필기 흐름 추적 (IKI)</h4>
+            <h4 class="font-semibold text-text-primary mb-1">🔍 Flagia Score (0–100)</h4>
             <p class="leading-relaxed">
-              Flagia는 학생의 키 스트로크 입력을 밀리초(ms) 단위로 분석합니다. 비정상적으로 일정한 타이핑 간격(IKI) 또는 붙여넣기를 감지하여 대필 및 인공지능 생성물 여부를 식별합니다.
+              학생이 글을 쓰는 동안 수집된 키 입력 텔레메트리를 분석해 <strong>사람이 직접 작성했을 신뢰도</strong>를 점수화합니다. 아래 5개 지표의 가중 합산으로 산출됩니다.
             </p>
           </section>
 
           <section>
-            <h4 class="font-semibold text-text-primary mb-1">🛡 분석 모드 구분</h4>
+            <h4 class="font-semibold text-text-primary mb-1">📊 5개 분석 지표</h4>
             <ul class="list-disc pl-5 space-y-1">
-              <li><strong>STRICT (시험 모드)</strong>: 브라우저 탭 이탈이나 글 붙여넣기를 전면 차단하며 엄격하게 통제합니다.</li>
-              <li><strong>STANDARD (일반 과제)</strong>: 일반 보고서용 권장 모드로, 자연스러운 수정 활동과 표절을 대조합니다.</li>
-              <li><strong>RESEARCH (조사 모드)</strong>: 외부 참고자료 복사 및 잦은 이탈을 허용하는 자유로운 과제 형태입니다.</li>
-              <li><strong>CREATIVE (창작 모드)</strong>: 일정한 속도 점검을 느슨하게 하여 생각하며 작성하는 창작용 모드입니다.</li>
+              <li><strong>⌨️ 타이핑 리듬</strong>: 키 입력 간격의 변동 계수(Cv). 기계처럼 일정하거나 붙여넣기로 표본이 부족하면 낮아집니다.</li>
+              <li><strong>✏️ 수정 강도</strong>: 키 입력 수 대비 최종 글자 수 비율. 수정 흔적이 거의 없으면 사전 작성·복사를 의심합니다.</li>
+              <li><strong>📋 외부 콘텐츠</strong>: 붙여넣기 횟수와 분량. 외부에서 가져온 비중이 클수록 낮아집니다.</li>
+              <li><strong>👁️ 집중도</strong>: 작성 중 에디터 이탈(blur) 누적 시간.</li>
+              <li><strong>⏱️ 작성 시간</strong>: 분량 대비 작성 속도(분당 글자 수). 사람이 타이핑하기엔 너무 빠르면 낮아집니다.</li>
             </ul>
           </section>
 
           <section>
-            <h4 class="font-semibold text-text-primary mb-1">✍️ 채점 및 점수 부여</h4>
+            <h4 class="font-semibold text-text-primary mb-1">🛡 분석 모드 (지표 가중치 조절)</h4>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>STRICT (시험)</strong>: 타이핑 리듬을 가장 엄격하게 평가합니다. (GREEN ≥ 75)</li>
+              <li><strong>STANDARD (일반 과제)</strong>: 균형 잡힌 기본 권장 모드입니다. (GREEN ≥ 70)</li>
+              <li><strong>RESEARCH (조사)</strong>: 외부 참고를 허용하되 붙여넣기 비중을 중점 평가합니다. (GREEN ≥ 60)</li>
+              <li><strong>CREATIVE (창작)</strong>: 리듬 기준을 완화하고 수정 활동을 폭넓게 인정합니다. (GREEN ≥ 55)</li>
+            </ul>
+          </section>
+
+          <section>
+            <h4 class="font-semibold text-text-primary mb-1">🚦 플래그 판정</h4>
             <p class="leading-relaxed">
-              제출물 분석 화면에서 제출된 본문과 작성 리플레이 과정을 검토한 뒤 피드백과 점수를 입력하여 제출물을 채점할 수 있습니다.
+              🟢 <strong>안전</strong> · 🟡 <strong>주의</strong> · 🔴 <strong>위험</strong>. 🟡 이상은 부정행위 단정이 아닌 <strong>추가 확인 권장</strong> 신호입니다.
+            </p>
+          </section>
+
+          <section>
+            <h4 class="font-semibold text-text-primary mb-1">🎥 작성 리플레이 & 채점</h4>
+            <p class="leading-relaxed">
+              교사는 분석 리포트에서 학생의 키 입력 과정을 재생(리플레이)하며 작성 흐름을 검토하고, 본문 화면에서 점수와 피드백을 입력할 수 있습니다.
             </p>
           </section>
         </div>
@@ -259,39 +262,42 @@ function isActive(path: string) {
       <div class="modal-card max-w-md w-full p-6 bg-white rounded-xl shadow-2xl relative">
         <button @click="showSettingsModal = false" class="modal-close-btn">&times;</button>
         <h3 class="text-lg font-bold text-text-primary mb-4">⚙️ 시스템 설정</h3>
-        
-        <div class="space-y-4 text-sm text-text-secondary">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="block font-semibold text-text-primary">기본 최대 배점</span>
-              <span class="text-xs text-text-muted">새 과제를 생성할 때 지정할 기본 배점</span>
-            </div>
-            <select v-model="gradingScale" class="form-input w-24">
-              <option value="10">10점 만점</option>
-              <option value="100">100점 만점</option>
-              <option value="4.5">4.5 학점</option>
-            </select>
-          </div>
 
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="block font-semibold text-text-primary">자동 AI 부정행위 플래그</span>
-              <span class="text-xs text-text-muted">비정상 타이핑 감지 시 빨간색 경고 표시</span>
+        <div class="space-y-5 text-sm text-text-secondary">
+          <!-- Account info (real data) -->
+          <section>
+            <h4 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">계정 정보</h4>
+            <div class="bg-background rounded-lg p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-text-muted">이름</span>
+                <span class="font-semibold text-text-primary">{{ user?.name }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-text-muted">이메일</span>
+                <span class="font-mono text-text-primary">{{ user?.email }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-text-muted">역할</span>
+                <span class="badge" :class="user?.role === 'TEACHER' ? 'badge-green' : 'badge-amber'">
+                  {{ user?.role === 'TEACHER' ? '교사' : '학생' }}
+                </span>
+              </div>
             </div>
-            <input type="checkbox" v-model="autoGrade" class="w-4 h-4 rounded text-primary focus:ring-primary" />
-          </div>
+          </section>
 
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="block font-semibold text-text-primary">알림 메일 발송</span>
-              <span class="text-xs text-text-muted">과제 제출 및 채점 완료 시 이메일 알림</span>
-            </div>
-            <input type="checkbox" v-model="emailNotify" class="w-4 h-4 rounded text-primary focus:ring-primary" />
-          </div>
+          <!-- Security info (real, from README/backend) -->
+          <section>
+            <h4 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">보안 & 무결성</h4>
+            <ul class="bg-background rounded-lg p-3 space-y-1.5 text-xs">
+              <li class="flex items-center gap-2"><span>🔒</span> 전송 구간 HTTPS / TLS 1.3</li>
+              <li class="flex items-center gap-2"><span>🔑</span> JWT 세션 (24시간 만료)</li>
+              <li class="flex items-center gap-2"><span>🧩</span> 텔레메트리 SHA-256 해시 체이닝 (변조 탐지)</li>
+            </ul>
+          </section>
         </div>
-        
+
         <div class="mt-6 flex justify-end">
-          <button @click="showSettingsModal = false" class="btn btn-primary">저장 완료</button>
+          <button @click="showSettingsModal = false" class="btn btn-primary">닫기</button>
         </div>
       </div>
     </div>

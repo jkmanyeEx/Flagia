@@ -71,6 +71,7 @@ interface AnalysisResult {
     revisionIntensity: ComponentScore;
     externalContent: ComponentScore;
     focusDuration: ComponentScore;
+    writingTime: ComponentScore;
   };
   timeline: TimelineBucket[];
   blurIntervals: BlurInterval[];
@@ -79,12 +80,28 @@ interface AnalysisResult {
   verdictDetail: string;
 }
 
-// Mode-specific weight adjustments
-const MODE_WEIGHTS: Record<string, { cvWeight: number; rrWeight: number; pasteWeight: number; blurWeight: number }> = {
-  STRICT:   { cvWeight: 0.35, rrWeight: 0.25, pasteWeight: 0.25, blurWeight: 0.15 },
-  STANDARD: { cvWeight: 0.30, rrWeight: 0.25, pasteWeight: 0.25, blurWeight: 0.20 },
-  RESEARCH: { cvWeight: 0.25, rrWeight: 0.20, pasteWeight: 0.30, blurWeight: 0.25 },
-  CREATIVE: { cvWeight: 0.20, rrWeight: 0.30, pasteWeight: 0.25, blurWeight: 0.25 },
+// Keys that are not typed content and should be excluded from rhythm analysis
+const NON_CONTENT_KEYS = new Set([
+  'Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape',
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+  'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete', 'Backspace',
+  'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+  'ContextMenu', 'Pause', 'ScrollLock', 'NumLock', 'PrintScreen',
+  'Process', 'Unidentified', 'Dead',
+]);
+
+// IKI samples beyond this are treated as "thinking pauses", not typing rhythm.
+// Korean typing is naturally bimodal (intra-syllable ~50ms, inter-word ~300ms);
+// allowing multi-second pauses inflates Cv and unfairly penalizes real writers.
+const IKI_CEILING_MS = 2000;
+
+// Mode-specific weight adjustments. timeWeight added so writing-pace can
+// down-score submissions that arrive far too fast for their length.
+const MODE_WEIGHTS: Record<string, { cvWeight: number; rrWeight: number; pasteWeight: number; blurWeight: number; timeWeight: number }> = {
+  STRICT:   { cvWeight: 0.30, rrWeight: 0.20, pasteWeight: 0.20, blurWeight: 0.15, timeWeight: 0.15 },
+  STANDARD: { cvWeight: 0.25, rrWeight: 0.20, pasteWeight: 0.20, blurWeight: 0.20, timeWeight: 0.15 },
+  RESEARCH: { cvWeight: 0.20, rrWeight: 0.15, pasteWeight: 0.30, blurWeight: 0.20, timeWeight: 0.15 },
+  CREATIVE: { cvWeight: 0.20, rrWeight: 0.25, pasteWeight: 0.20, blurWeight: 0.20, timeWeight: 0.15 },
 };
 
 // Mode-specific flag thresholds
@@ -116,45 +133,74 @@ function computeCv(ikiValues: number[]): number {
 
 /**
  * Score component: IKI Cv
- * Human typing typically has Cv between 0.3-0.8
- * Very low Cv (< 0.1) suggests automated input
- * Very high Cv (> 1.5) suggests copy-paste bursts
+ * 
+ * Higher Cv = more variation in keystroke timing.
+ * Human typing has natural variation (Cv 0.4–0.9).
+ * Very LOW Cv (< 0.2) = suspiciously uniform = likely bot/macro/copy-typing.
+ * Very HIGH Cv (> 1.5) = erratic bursts = likely paste then edit.
+ *
+ * IMPORTANT: Low Cv (consistent speed) is PENALIZED because
+ * real humans don't type at machine-like constant speed.
  */
 function scoreCv(cv: number): number {
-  // Smooth bell-curve scorer centered on the natural range (0.3-0.8)
-  // Uses linear interpolation instead of hard step thresholds
-  if (cv >= 0.3 && cv <= 0.8) return 100;       // Natural human range — perfect
+  // Sweet spot: natural human variation
+  if (cv >= 0.4 && cv <= 0.9) return 100;
 
-  // Below natural range: smooth degradation
-  if (cv < 0.3 && cv >= 0.2) {
-    return 85 + ((cv - 0.2) / 0.1) * 15;         // 85 → 100 linear
+  // Slightly below natural range (still okay)
+  if (cv >= 0.3 && cv < 0.4) {
+    return Math.round(80 + ((cv - 0.3) / 0.1) * 20);
   }
-  if (cv < 0.2 && cv >= 0.1) {
-    return 50 + ((cv - 0.1) / 0.1) * 35;         // 50 → 85 linear
+  // Getting too uniform — suspicious
+  if (cv >= 0.2 && cv < 0.3) {
+    return Math.round(50 + ((cv - 0.2) / 0.1) * 30);
   }
+  // Very uniform — likely copy-typing or automated
+  if (cv >= 0.1 && cv < 0.2) {
+    return Math.round(20 + ((cv - 0.1) / 0.1) * 30);
+  }
+  // Machine-like uniformity
   if (cv < 0.1) {
-    return Math.max(10, 50 * (cv / 0.1));        // 0 → 50 linear, floor 10
+    return Math.max(5, Math.round(20 * (cv / 0.1)));
   }
 
-  // Above natural range: smooth degradation
-  if (cv > 0.8 && cv <= 1.0) {
-    return 80 + ((1.0 - cv) / 0.2) * 20;         // 80 → 100 linear
+  // Slightly above natural range (still okay)
+  if (cv > 0.9 && cv <= 1.1) {
+    return Math.round(80 + ((1.1 - cv) / 0.2) * 20);
   }
-  if (cv > 1.0 && cv <= 1.5) {
-    return 30 + ((1.5 - cv) / 0.5) * 50;         // 30 → 80 linear
+  // Getting erratic — possible paste+edit pattern
+  if (cv > 1.1 && cv <= 1.5) {
+    return Math.round(40 + ((1.5 - cv) / 0.4) * 40);
   }
-  // cv > 1.5: erratic bursts
-  return Math.max(10, 30 - (cv - 1.5) * 15);    // degrades from 30
+  // Very erratic
+  return Math.max(5, Math.round(40 - (cv - 1.5) * 20));
 }
 
-function getCvDescription(cv: number): string {
-  if (cv >= 0.3 && cv <= 0.8) return '자연스러운 사람의 타이핑 리듬이 관찰됩니다. 키 입력 간격의 변동이 사람의 일반적인 범위 내에 있습니다.';
-  if (cv >= 0.2 && cv < 0.3) return '타이핑 리듬이 약간 균일하지만, 대부분의 자연스러운 타이핑 패턴과 일치합니다.';
-  if (cv > 0.8 && cv <= 1.0) return '타이핑 리듬에 다소 높은 변동이 관찰됩니다. 간헐적인 사고나 수정 작업이 포함된 것으로 보입니다.';
-  if (cv >= 0.1 && cv < 0.2) return '타이핑 리듬이 상당히 균일합니다. 미리 작성된 텍스트를 옮겨 쓰고 있을 가능성이 있습니다.';
-  if (cv > 1.0 && cv <= 1.5) return '키 입력 간격의 변동이 매우 큽니다. 외부 소스에서 간헐적으로 복사했을 가능성이 있습니다.';
-  if (cv < 0.1) return '키 입력이 기계적으로 균일합니다. 자동 입력 도구나 매크로 사용이 의심됩니다.';
-  return '키 입력 패턴이 매우 불규칙합니다. 대량 복사-붙여넣기 후 간헐적 수정 패턴이 관찰됩니다.';
+/**
+ * Cv description must reflect the FINAL score (after confidence scaling),
+ * not just raw cv. Otherwise we get "good" scores paired with "very erratic /
+ * paste pattern" text, confusing teachers.
+ */
+function getCvDescription(cv: number, finalScore: number, rhythmConfidence: number, sampleCount: number): string {
+  // Low-confidence path: too few keystrokes or paste-dominated. The Cv number
+  // is statistically meaningless here — explain that.
+  if (rhythmConfidence < 0.5) {
+    if (sampleCount < 10) {
+      return `타이핑 표본이 너무 적습니다(${sampleCount}회). 직접 타이핑한 내용이 거의 없어 리듬을 판정할 수 없습니다.`;
+    }
+    return '최종 텍스트에 비해 직접 타이핑한 키 입력이 현저히 적습니다. 대부분의 내용이 외부에서 가져온 것으로 의심되어 리듬 분석 신뢰도가 매우 낮습니다.';
+  }
+
+  // High-confidence path: describe by score tier so text matches the number.
+  if (finalScore >= 85) return '자연스러운 사람의 타이핑 리듬이 관찰됩니다. 키 입력 간격의 변동이 사람의 일반적인 범위 내에 있습니다.';
+  if (finalScore >= 70) return '대체로 자연스러운 타이핑 리듬입니다. 일반적인 사람의 작성 패턴 범위에 해당합니다.';
+  if (finalScore >= 50) {
+    if (cv < 0.3) return '타이핑 속도가 다소 일정합니다. 미리 작성된 텍스트를 보고 옮겨 치고 있을 가능성이 있습니다.';
+    return '타이핑 리듬에 일부 비정상적인 변동이 관찰됩니다. 간헐적인 수정 작업이나 외부 참고가 포함된 것으로 보입니다.';
+  }
+  // Low score
+  if (cv < 0.2) return '타이핑 리듬이 매우 균일합니다. 자동 입력이나 준비된 텍스트를 그대로 옮겨 쓰는 패턴입니다.';
+  if (cv < 0.1) return '키 입력이 기계적으로 균일합니다. 자동 입력 도구나 매크로 사용이 강하게 의심됩니다.';
+  return '키 입력 간격의 변동이 비정상적으로 큽니다. 외부 소스에서 복사한 뒤 간헐적으로 편집한 패턴일 수 있습니다.';
 }
 
 /**
@@ -237,6 +283,62 @@ function getBlurDescription(totalSeconds: number): string {
   return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 작성 시간의 상당 부분을 외부에서 활동한 것으로 의심됩니다.`;
 }
 
+/**
+ * Score component: Writing Time
+ *
+ * Human writing in Korean averages ~100–150 characters per minute (cpm);
+ * fast writers can sustain ~200 cpm. Beyond ~400 cpm, the submission was
+ * almost certainly not typed in real time. Very short sessions for long
+ * texts are a strong AI/paste signal.
+ *
+ * Excludes the submission edge case: < 50 chars is too little to judge.
+ */
+function scoreWritingTime(durationSec: number, textLength: number): number {
+  if (textLength < 50) return 100;          // not enough content to judge
+  if (durationSec < 5) return 5;            // submitted before they could type
+  const cpm = textLength / (durationSec / 60);
+  if (cpm <= 200) return 100;               // natural human pace
+  if (cpm <= 300) return 85;                // fast but plausible
+  if (cpm <= 500) return 55;                // very fast — paste-and-edit likely
+  if (cpm <= 800) return 25;
+  return 10;                                // unrealistic for human typing
+}
+
+function getTimeDescription(durationSec: number, textLength: number): string {
+  if (textLength < 50) return '판정할 만큼 충분한 글자 수가 아닙니다.';
+  if (durationSec < 5) return '작성 시간이 비정상적으로 짧습니다. 사실상 타이핑 없이 제출된 것으로 보입니다.';
+  const cpm = Math.round(textLength / (durationSec / 60));
+  const mins = Math.max(1, Math.round(durationSec / 60));
+  if (cpm <= 200) return `약 ${mins}분 동안 분당 ${cpm}자를 작성했습니다. 사람의 일반적인 글쓰기 속도입니다.`;
+  if (cpm <= 300) return `분당 약 ${cpm}자로 다소 빠르지만 사람이 작성할 수 있는 범위입니다.`;
+  if (cpm <= 500) return `분당 약 ${cpm}자로 매우 빠른 속도입니다. 외부에서 작성된 글을 옮겼거나 부분적으로 붙여넣었을 가능성이 있습니다.`;
+  if (cpm <= 800) return `분당 약 ${cpm}자입니다. 사람이 실시간으로 타이핑한 속도라고 보기 어렵습니다.`;
+  return `분당 약 ${cpm}자로 사람이 작성할 수 없는 속도입니다. 대부분의 내용이 외부에서 작성되어 한 번에 입력된 것으로 의심됩니다.`;
+}
+
+/**
+ * Drop the trailing unpaired blur event that fires when the student clicks
+ * the "제출" button — the editor loses focus before the submit completes,
+ * but no matching focus event ever returns. Counting this as an editor
+ * leave produces a spurious yellow bucket at the end of every timeline.
+ */
+function stripSubmitInducedBlur(events: TelemetryEvent[]): TelemetryEvent[] {
+  let openBlurIdx = -1;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.type === 'blur') openBlurIdx = i;
+    else if (e.type === 'focus') openBlurIdx = -1;
+  }
+  if (openBlurIdx < 0) return events;
+  // If the unmatched blur is also the last event (or only followed by
+  // non-focus/keydown events), treat it as submit-induced and drop it.
+  const hasFocusOrInputAfter = events.slice(openBlurIdx + 1).some(
+    e => e.type === 'focus' || e.type === 'keydown' || e.type === 'paste'
+  );
+  if (hasFocusOrInputAfter) return events;
+  return events.slice(0, openBlurIdx).concat(events.slice(openBlurIdx + 1));
+}
+
 function getComponentStatus(score: number): 'good' | 'warning' | 'danger' {
   if (score >= 70) return 'good';
   if (score >= 40) return 'warning';
@@ -264,7 +366,7 @@ function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000): Timeline
     
     const keystrokes = bucketEvents.filter(e => e.type === 'keydown').length;
     const ikiValues = bucketEvents
-      .filter(e => e.type === 'keydown' && e.iki > 0 && e.iki < 30000)
+      .filter(e => e.type === 'keydown' && e.iki > 0 && e.iki < IKI_CEILING_MS)
       .map(e => e.iki);
     const avgIki = ikiValues.length > 0 ? ikiValues.reduce((a, b) => a + b, 0) / ikiValues.length : 0;
     const isBlurred = bucketEvents.some(e => e.type === 'blur') && !bucketEvents.some(e => e.type === 'focus');
@@ -318,10 +420,7 @@ function buildBlurIntervals(events: TelemetryEvent[]): BlurInterval[] {
 function generateVerdict(
   flagiaScore: number,
   flagStatus: string,
-  cv: number,
-  rr: number,
-  pasteCount: number,
-  blurSeconds: number,
+  scores: { cv: number; rr: number; paste: number; blur: number; time: number },
   mode: string
 ): { verdict: string; verdictDetail: string } {
   let verdict: string;
@@ -329,14 +428,15 @@ function generateVerdict(
 
   if (flagStatus === 'GREEN') {
     verdict = '이 제출물은 자연스러운 사람의 글쓰기 패턴을 보여줍니다.';
-    details.push('키스트로크 리듬, 수정 빈도, 집중 시간 등 모든 지표가 정상 범위 내에 있습니다.');
+    details.push('키스트로크 리듬, 수정 빈도, 집중 시간, 작성 속도 등 모든 지표가 정상 범위 내에 있습니다.');
   } else if (flagStatus === 'AMBER') {
     verdict = '이 제출물에서 일부 비정상적인 패턴이 감지되었습니다.';
     const issues: string[] = [];
-    if (scoreCv(cv) < 70) issues.push('타이핑 리듬');
-    if (scoreRevisionRatio(rr) < 70) issues.push('수정 패턴');
-    if (scorePasteCount(pasteCount) < 70) issues.push('외부 콘텐츠');
-    if (scoreBlurDuration(blurSeconds) < 70) issues.push('화면 이탈');
+    if (scores.cv < 70) issues.push('타이핑 리듬');
+    if (scores.rr < 70) issues.push('수정 패턴');
+    if (scores.paste < 70) issues.push('외부 콘텐츠');
+    if (scores.blur < 70) issues.push('화면 이탈');
+    if (scores.time < 70) issues.push('작성 시간');
     if (issues.length > 0) details.push(`주의가 필요한 영역: ${issues.join(', ')}`);
     details.push('추가적인 확인이 권장되지만, 단독으로 부정행위를 판단하기에는 불충분합니다.');
   } else {
@@ -354,21 +454,29 @@ function generateVerdict(
  * Main analysis function
  */
 export function runFlagiaAnalysis(
-  events: TelemetryEvent[],
+  rawEvents: TelemetryEvent[],
   finalMarkdown: string,
   templateText: string,
   mode: string
 ): AnalysisResult {
   const weights = MODE_WEIGHTS[mode] || MODE_WEIGHTS.STANDARD;
   const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
+  const events = stripSubmitInducedBlur(rawEvents);
 
-  // ── Template offset: strip template text length from final text count ──
+  // ── Template offset: strip HTML tags to get real text length ──
   const templateLength = (templateText || '').length;
-  const effectiveTextLength = Math.max(1, finalMarkdown.length - templateLength);
+  const plainText = finalMarkdown.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  const effectiveTextLength = Math.max(1, plainText.length - templateLength);
 
-  // ── IKI values: only keydown events with valid IKI ──
-  const ikiValues = events
-    .filter((e) => e.type === 'keydown' && e.iki > 0 && e.iki < 30000)
+  // ── IKI values: only CONTENT keydown events with valid IKI ──
+  // Modifier and navigation keys (Shift, Meta, arrows, Backspace…) are not
+  // typing rhythm — filtering them out keeps a paste followed by Ctrl/Meta+V
+  // from registering as a 99-score "rhythm sample".
+  const contentKeydowns = events.filter(
+    (e) => e.type === 'keydown' && e.meta?.key && !NON_CONTENT_KEYS.has(e.meta.key)
+  );
+  const ikiValues = contentKeydowns
+    .filter((e) => e.iki > 0 && e.iki < IKI_CEILING_MS)
     .map((e) => e.iki);
 
   const cv = computeCv(ikiValues);
@@ -409,7 +517,17 @@ export function runFlagiaAnalysis(
   }
 
   // ── Component Scores ──
-  const cvScore = scoreCv(cv);
+  // Rhythm score is only meaningful when there's enough typing AND when most
+  // of the final text was actually typed (not pasted). Scale toward a low
+  // floor when the sample is too small or content-keystrokes ≪ final text.
+  const sampleConfidence = Math.min(1, ikiValues.length / 30);
+  const contentConfidence = effectiveTextLength > 0
+    ? Math.min(1, contentKeydowns.length / effectiveTextLength)
+    : 0;
+  const rhythmConfidence = Math.min(sampleConfidence, contentConfidence);
+  const RHYTHM_FLOOR = 5;
+  const rawCvScore = scoreCv(cv);
+  const cvScore = Math.round(rawCvScore * rhythmConfidence + RHYTHM_FLOOR * (1 - rhythmConfidence));
   const rrScore = scoreRevisionRatio(revisionRatio);
   const pasteCountScore = scorePasteCount(totalPasteCount);
   const pasteVolumeScore = scorePasteVolume(totalPastedLength, effectiveTextLength);
@@ -417,12 +535,20 @@ export function runFlagiaAnalysis(
   const pasteScore = Math.round(pasteVolumeScore * 0.6 + pasteCountScore * 0.4);
   const blurScore = scoreBlurDuration(totalBlurDuration);
 
+  // ── Writing-time score: derived from session span vs. final text length ──
+  const eventTimestamps = events.map(e => e.timestamp).filter(t => t > 0);
+  const totalDurationSec = eventTimestamps.length >= 2
+    ? (Math.max(...eventTimestamps) - Math.min(...eventTimestamps)) / 1000
+    : 0;
+  const timeScore = scoreWritingTime(totalDurationSec, effectiveTextLength);
+
   // ── Composite Flagia Score ──
-  let flagiaScore = 
+  let flagiaScore =
     cvScore * weights.cvWeight +
     rrScore * weights.rrWeight +
     pasteScore * weights.pasteWeight +
-    blurScore * weights.blurWeight;
+    blurScore * weights.blurWeight +
+    timeScore * weights.timeWeight;
 
   flagiaScore = Math.round(Math.max(0, Math.min(100, flagiaScore)) * 100) / 100;
 
@@ -449,7 +575,7 @@ export function runFlagiaAnalysis(
       weighted: Math.round(cvScore * weights.cvWeight * 100) / 100,
       weight: weights.cvWeight,
       label: '타이핑 리듬',
-      description: getCvDescription(cv),
+      description: getCvDescription(cv, cvScore, rhythmConfidence, ikiValues.length),
       status: getComponentStatus(cvScore),
     } as ComponentScore,
     revisionIntensity: {
@@ -476,6 +602,14 @@ export function runFlagiaAnalysis(
       description: getBlurDescription(totalBlurDuration),
       status: getComponentStatus(blurScore),
     } as ComponentScore,
+    writingTime: {
+      raw: timeScore,
+      weighted: Math.round(timeScore * weights.timeWeight * 100) / 100,
+      weight: weights.timeWeight,
+      label: '작성 시간',
+      description: getTimeDescription(totalDurationSec, effectiveTextLength),
+      status: getComponentStatus(timeScore),
+    } as ComponentScore,
   };
 
   // ── Timeline & blur intervals ──
@@ -483,10 +617,6 @@ export function runFlagiaAnalysis(
   const blurIntervals = buildBlurIntervals(events);
 
   // ── Session Summary ──
-  const timestamps = events.map(e => e.timestamp).filter(t => t > 0);
-  const totalDurationSec = timestamps.length >= 2
-    ? (Math.max(...timestamps) - Math.min(...timestamps)) / 1000
-    : 0;
   const avgWPM = totalDurationSec > 0
     ? Math.round((effectiveTextLength / 5) / (totalDurationSec / 60))
     : 0;
@@ -501,7 +631,10 @@ export function runFlagiaAnalysis(
 
   // ── Verdict ──
   const { verdict, verdictDetail } = generateVerdict(
-    flagiaScore, flagStatus, cv, revisionRatio, totalPasteCount, totalBlurDuration, mode
+    flagiaScore,
+    flagStatus,
+    { cv: cvScore, rr: rrScore, paste: pasteScore, blur: blurScore, time: timeScore },
+    mode
   );
 
   return {

@@ -64,6 +64,7 @@ interface AnalysisResult {
         revisionIntensity: ComponentScore;
         externalContent: ComponentScore;
         focusDuration: ComponentScore;
+        writingTime: ComponentScore;
     };
     timeline: TimelineBucket[];
     blurIntervals: BlurInterval[];
@@ -74,6 +75,6 @@ interface AnalysisResult {
 /**
  * Main analysis function
  */
-export declare function runFlagiaAnalysis(events: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string): AnalysisResult;
+export declare function runFlagiaAnalysis(rawEvents: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string): AnalysisResult;
 export {};
 //# sourceMappingURL=flagiaEngine.d.ts.map

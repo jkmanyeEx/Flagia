@@ -163,6 +163,9 @@ function handleKeydown(e: KeyboardEvent, cursor?: number) {
   pushEvent('keydown', {
     key: e.key,
     cursorPosition: cursor ?? 0,
+    // Capture modifier state so the replay can distinguish a shortcut
+    // (e.g. Ctrl/Cmd+B) from a literal character keystroke.
+    mod: e.ctrlKey || e.metaKey || e.altKey,
   })
 }
 
@@ -176,7 +179,14 @@ function handlePaste(e: ClipboardEvent, cursor?: number) {
   })
 }
 
-function handleBlur() { if (submitting.value) return; pushEvent('blur') }
+function handleBlur() {
+  // Suppress the blur event that fires when the user clicks "제출" — the
+  // submit-button click steals focus from the editor before the submit
+  // network call begins. Treating that as an editor leave produces a
+  // spurious yellow bucket at the end of every timeline.
+  if (submitting.value || showSubmitModal.value || isLocked.value) return
+  pushEvent('blur')
+}
 function handleFocus() { pushEvent('focus') }
 
 // ── Toolbar actions ──
