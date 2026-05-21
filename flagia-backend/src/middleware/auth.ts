@@ -5,7 +5,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'flagia_jwt_secret_2024_kr';
 
 export interface AuthPayload {
   userId: string;
-  role: 'TEACHER' | 'STUDENT';
+  role: 'TEACHER' | 'STUDENT' | 'ADMIN';
 }
 
 export function signToken(payload: AuthPayload): string {
@@ -31,9 +31,13 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   }
 }
 
+// Allows TEACHER and ADMIN through. Admins may author/manage their own
+// resources just like a teacher; per-endpoint ownership checks (teacher_id ===
+// userId) still restrict mutations to resources the caller actually owns, so an
+// admin can never modify another teacher's classroom/assignment.
 export function teacherOnly(req: Request, res: Response, next: NextFunction): void {
   const user = (req as any).user as AuthPayload;
-  if (user.role !== 'TEACHER') {
+  if (user.role !== 'TEACHER' && user.role !== 'ADMIN') {
     res.status(403).json({ error: '교사 권한이 필요합니다' });
     return;
   }

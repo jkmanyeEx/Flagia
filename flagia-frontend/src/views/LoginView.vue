@@ -12,7 +12,7 @@ const isLogin = ref(route.name !== 'register')
 const name = ref('')
 const email = ref('')
 const password = ref('')
-const role = ref<'STUDENT' | 'TEACHER'>('STUDENT')
+const role = ref<'STUDENT' | 'TEACHER' | 'ADMIN'>('STUDENT')
 const loading = ref(false)
 const error = ref('')
 
@@ -142,7 +142,7 @@ function toggleMode() {
             <!-- Role (register only) -->
             <div v-if="!isLogin">
               <label class="label">역할</label>
-              <div class="grid grid-cols-2 gap-2">
+              <div class="grid grid-cols-3 gap-2">
                 <button type="button"
                   @click="role = 'STUDENT'"
                   class="mode-option text-center text-sm"
@@ -157,7 +157,17 @@ function toggleMode() {
                   <div class="text-lg mb-0.5">📋</div>
                   교사
                 </button>
+                <button type="button"
+                  @click="role = 'ADMIN'"
+                  class="mode-option text-center text-sm"
+                  :class="{ selected: role === 'ADMIN' }">
+                  <div class="text-lg mb-0.5">🛡️</div>
+                  관리자
+                </button>
               </div>
+              <p v-if="role === 'ADMIN'" class="text-xs text-text-muted mt-1.5 leading-relaxed">
+                관리자는 모든 과제와 학급을 열람할 수 있으며, 본인이 만들었거나 참여한 항목만 관리할 수 있습니다.
+              </p>
             </div>
 
             <!-- Error -->

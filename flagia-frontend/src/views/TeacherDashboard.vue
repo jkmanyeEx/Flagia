@@ -10,7 +10,12 @@ const API = resolveApiBase()
 const WS_URL = resolveWsUrl()
 const router = useRouter()
 const route = useRoute()
-const { user, token } = useAuth()
+const { user, token, isAdmin } = useAuth()
+
+// Admin sees every assignment (scope=all); teachers always get only their own
+// regardless of the param. `owns()` decides whether action controls are shown.
+const listUrl = `${API}/api/assignments?scope=all`
+function owns(a: any) { return a?.teacher_id === user.value?.id }
 
 // State
 const assignments = ref<any[]>([])
@@ -108,7 +113,7 @@ async function fetchSubmissionsSilently() {
 
 async function fetchAssignmentsSilently() {
   try {
-    const res = await fetch(`${API}/api/assignments`, {
+    const res = await fetch(listUrl, {
       headers: { Authorization: `Bearer ${token.value}` },
     })
     if (res.ok) {
@@ -129,7 +134,7 @@ async function fetchAssignmentsSilently() {
 
 onMounted(async () => {
   try {
-    const res = await fetch(`${API}/api/assignments`, {
+    const res = await fetch(listUrl, {
       headers: { Authorization: `Bearer ${token.value}` },
     })
     if (res.ok) {
@@ -155,6 +160,8 @@ onUnmounted(() => {
 })
 
 async function selectAssignment(a: any) {
+  // Admins may view but not open assignments they don't own.
+  if (!owns(a)) return
   selectedAssignment.value = a
   loadingSubs.value = true
   try {
@@ -285,8 +292,12 @@ function getGaugeOffset(score: number) {
     <div v-if="!selectedAssignment">
       <div class="flex items-center justify-between mb-8">
         <div>
-          <h1 class="text-2xl font-bold text-text-primary">과제 관리</h1>
-          <p class="text-sm text-text-secondary mt-1">학생들에게 과제를 부여하고 분석 결과를 확인하세요.</p>
+          <h1 class="text-2xl font-bold text-text-primary">{{ isAdmin ? '전체 과제 (관리자)' : '과제 관리' }}</h1>
+          <p class="text-sm text-text-secondary mt-1">
+            {{ isAdmin
+              ? '모든 과제를 열람할 수 있습니다. 본인이 만든 과제만 열어 관리할 수 있습니다.'
+              : '학생들에게 과제를 부여하고 분석 결과를 확인하세요.' }}
+          </p>
         </div>
         <button @click="showCreateModal = true" class="btn btn-primary">
           + 새 과제 만들기
@@ -311,9 +322,14 @@ function getGaugeOffset(score: number) {
             <tr v-else-if="assignments.length === 0">
               <td colspan="5" class="text-center py-12 text-text-muted">생성된 과제가 없습니다.</td>
             </tr>
-            <tr v-else v-for="a in assignments" :key="a.id" @click="selectAssignment(a)" class="cursor-pointer hover:bg-background">
+            <tr v-else v-for="a in assignments" :key="a.id"
+                @click="owns(a) ? selectAssignment(a) : null"
+                :class="owns(a) ? 'cursor-pointer hover:bg-background' : 'cursor-default opacity-60'">
               <td>
                 <div class="font-medium text-text-primary">{{ a.title }}</div>
+                <div v-if="isAdmin && a.teacher_name" class="text-xs text-text-muted mt-0.5">
+                  👤 {{ a.teacher_name }}<span v-if="!owns(a)"> · 보기 전용</span>
+                </div>
               </td>
               <td>
                 <span class="font-mono bg-background px-2 py-1 rounded border border-border text-xs">{{ a.join_code }}</span>
@@ -328,7 +344,8 @@ function getGaugeOffset(score: number) {
                 </div>
               </td>
               <td class="text-right">
-                <button @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
+                <button v-if="owns(a)" @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
+                <span v-else class="text-xs text-text-muted">—</span>
               </td>
             </tr>
           </tbody>

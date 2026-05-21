@@ -9,25 +9,53 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      # This completely replaces 'rm -rf' and 'gh repo clone' safely and instantly
+      # Replaces 'rm -rf' + 'gh repo clone' safely and instantly.
       - name: Checkout fresh code
         uses: actions/checkout@v4
 
-      - name: Execute local deployment commands
+      - name: Build frontend & backend
         run: |
-          echo "New code pushed to main. Deploying changes..."
-          
-          # 1. Navigate directly to the step's checked-out frontend folder
+          echo "New code pushed to main. Building..."
+
+          # 1. Frontend
           cd flagia-frontend
-          npm ci --verbose  # <-- --verbose forces npm to output every single line of download work
+          npm ci --verbose  # --verbose forces npm to output every line of download work
           npm install
           npm run build
-          
-          # 2. Navigate directly to the backend folder
+
+          # 2. Backend
           cd ../flagia-backend
-          npm ci --verbose  # <-- --verbose forces npm to output every single line of download work
+          npm ci --verbose
           npm install
           npm run build
-          
-          # 3. Restart PM2 process manager
-          pm2 restart all
+
+      # Apply idempotent SQL migrations against the local prod DB. The runner is
+      # on the same host as MySQL (the app connects to 127.0.0.1), so the mysql
+      # client can reach it here. Safe to run on every deploy. Best-effort:
+      # continue-on-error + graceful skips mean a migration hiccup never blocks
+      # the restart — the backend also runs the same steps at boot (ensureSchema).
+      - name: Apply database migrations
+        continue-on-error: true
+        env:
+          DB_HOST: 127.0.0.1
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_MIGRATE_USER }}
+          DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+        run: |
+          if ! command -v mysql >/dev/null 2>&1; then
+            echo "mysql client not found on runner; skipping (backend boot ensureSchema will migrate)."
+            exit 0
+          fi
+          if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+            echo "DB migration secrets not set; skipping (backend boot ensureSchema will migrate)."
+            exit 0
+          fi
+          shopt -s nullglob
+          for f in flagia-backend/migrations/*.sql; do
+            echo "Applying migration: $f"
+            mysql --host="$DB_HOST" --user="$DB_USER" --password="$DB_PASS" "$DB_NAME" < "$f"
+          done
+          echo "Migrations applied."
+
+      - name: Restart PM2 process manager
+        run: pm2 restart all

@@ -12,6 +12,7 @@ const assignments_1 = __importDefault(require("./routes/assignments"));
 const submissions_1 = __importDefault(require("./routes/submissions"));
 const classrooms_1 = __importDefault(require("./routes/classrooms"));
 const database_1 = __importDefault(require("./database"));
+const migrate_1 = require("./migrate");
 const app = (0, express_1.default)();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 app.use((0, cors_1.default)({ origin: true, credentials: true }));
@@ -38,6 +39,8 @@ async function start() {
         const conn = await database_1.default.getConnection();
         console.log('✅ MySQL connected');
         conn.release();
+        console.log('🔧 Ensuring schema is up to date...');
+        await (0, migrate_1.ensureSchema)();
         server.listen(PORT, () => {
             console.log(`🚀 Flagia backend running on :${PORT}`);
         });

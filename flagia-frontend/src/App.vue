@@ -46,18 +46,22 @@ const activeNav = computed(() => {
   const n = route.name as string
   if (n === 'analysis') return 'analysis'
   if (n === 'classrooms' || n === 'classroom-detail') return 'classrooms'
-  if (user.value?.role === 'TEACHER') {
-    if (n === 'teacher' || n === 'dashboard') return 'teacher-dash'
-    return ''
-  }
-  // Student
-  if (n === 'student-home' || n === 'dashboard') {
+  if (n === 'teacher') return 'teacher-dash'
+  if (n === 'student-home') {
     if (route.query.filter === 'IN_PROGRESS') return 'student-inprogress'
     if (route.query.filter === 'SUBMITTED') return 'student-submitted'
     return 'student-all'
   }
+  // /dashboard redirects by role; reflect where it lands.
+  if (n === 'dashboard') return user.value?.role === 'STUDENT' ? 'student-all' : 'teacher-dash'
   return ''
 })
+
+const roleLabel = computed(() =>
+  user.value?.role === 'TEACHER' ? '교사 계정'
+    : user.value?.role === 'ADMIN' ? '관리자 계정'
+    : '학생 계정'
+)
 </script>
 
 <template>
@@ -98,7 +102,7 @@ const activeNav = computed(() => {
       <div class="sidebar-profile">
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ user?.name }}</span>
-          <span class="sidebar-user-role">{{ user?.role === 'TEACHER' ? '교사 계정' : '학생 계정' }}</span>
+          <span class="sidebar-user-role">{{ roleLabel }}</span>
         </div>
       </div>
 
@@ -110,19 +114,17 @@ const activeNav = computed(() => {
           <span class="item-label">학급</span>
         </button>
 
-        <!-- Teacher-specific links -->
-        <template v-if="user?.role === 'TEACHER'">
-          <button @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
-            <span class="item-icon">📝</span>
-            <span class="item-label">과제 관리</span>
-          </button>
-        </template>
+        <!-- Teacher / Admin: assignment management -->
+        <button v-if="user?.role === 'TEACHER' || user?.role === 'ADMIN'" @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
+          <span class="item-icon">📝</span>
+          <span class="item-label">과제 관리</span>
+        </button>
 
-        <!-- Student-specific links -->
-        <template v-else>
+        <!-- Student / Admin: student-side assignment views -->
+        <template v-if="user?.role === 'STUDENT' || user?.role === 'ADMIN'">
           <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-all' }">
             <span class="item-icon">📋</span>
-            <span class="item-label">전체 과제 목록</span>
+            <span class="item-label">{{ user?.role === 'ADMIN' ? '내 과제 (학생용)' : '전체 과제 목록' }}</span>
           </button>
           <button @click="router.push('/student?filter=IN_PROGRESS')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-inprogress' }">
             <span class="item-icon">✏️</span>
@@ -280,8 +282,8 @@ const activeNav = computed(() => {
               </div>
               <div class="flex items-center justify-between">
                 <span class="text-text-muted">역할</span>
-                <span class="badge" :class="user?.role === 'TEACHER' ? 'badge-green' : 'badge-amber'">
-                  {{ user?.role === 'TEACHER' ? '교사' : '학생' }}
+                <span class="badge" :class="user?.role === 'STUDENT' ? 'badge-amber' : 'badge-green'">
+                  {{ user?.role === 'TEACHER' ? '교사' : user?.role === 'ADMIN' ? '관리자' : '학생' }}
                 </span>
               </div>
             </div>

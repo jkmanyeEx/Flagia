@@ -9,7 +9,7 @@ export interface FlagiaUser {
   id: string
   name: string
   email: string
-  role: 'TEACHER' | 'STUDENT'
+  role: 'TEACHER' | 'STUDENT' | 'ADMIN'
 }
 
 // ── Singleton reactive state ──
@@ -21,6 +21,7 @@ const ready = ref(false) // true once initial validation completes
 const isLoggedIn = computed(() => !!token.value && !!user.value)
 const isTeacher = computed(() => user.value?.role === 'TEACHER')
 const isStudent = computed(() => user.value?.role === 'STUDENT')
+const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
 // ── Hydrate user from localStorage cache (fast, non-blocking) ──
 function hydrateFromCache() {
@@ -105,6 +106,7 @@ export function useAuth() {
     isLoggedIn,
     isTeacher,
     isStudent,
+    isAdmin,
     login,
     register,
     logout,

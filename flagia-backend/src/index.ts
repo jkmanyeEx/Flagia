@@ -7,6 +7,7 @@ import assignmentsRouter from './routes/assignments';
 import submissionsRouter from './routes/submissions';
 import classroomsRouter from './routes/classrooms';
 import pool from './database';
+import { ensureSchema } from './migrate';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -40,6 +41,9 @@ async function start() {
     const conn = await pool.getConnection();
     console.log('✅ MySQL connected');
     conn.release();
+
+    console.log('🔧 Ensuring schema is up to date...');
+    await ensureSchema();
 
     server.listen(PORT, () => {
       console.log(`🚀 Flagia backend running on :${PORT}`);

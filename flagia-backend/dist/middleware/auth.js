@@ -30,9 +30,13 @@ function authMiddleware(req, res, next) {
         res.status(401).json({ error: '유효하지 않은 토큰입니다' });
     }
 }
+// Allows TEACHER and ADMIN through. Admins may author/manage their own
+// resources just like a teacher; per-endpoint ownership checks (teacher_id ===
+// userId) still restrict mutations to resources the caller actually owns, so an
+// admin can never modify another teacher's classroom/assignment.
 function teacherOnly(req, res, next) {
     const user = req.user;
-    if (user.role !== 'TEACHER') {
+    if (user.role !== 'TEACHER' && user.role !== 'ADMIN') {
         res.status(403).json({ error: '교사 권한이 필요합니다' });
         return;
     }

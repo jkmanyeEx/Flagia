@@ -25,6 +25,21 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
         [user.userId]
       );
       res.json(rows);
+    } else if (user.role === 'ADMIN') {
+      // Admin oversight: every classroom. teacher_id (via c.*) tells the client
+      // which ones the admin owns; is_member flags ones they joined. Actions are
+      // limited to owned/joined on both client and server.
+      const [rows] = await pool.query(
+        `SELECT c.*, u.name AS teacher_name,
+            (SELECT COUNT(*) FROM classroom_members m WHERE m.classroom_id = c.id) AS member_count,
+            (SELECT COUNT(*) FROM assignments a WHERE a.classroom_id = c.id) AS assignment_count,
+            (SELECT COUNT(*) FROM classroom_members m2 WHERE m2.classroom_id = c.id AND m2.student_id = ?) AS is_member
+         FROM classrooms c
+         JOIN users u ON c.teacher_id = u.id
+         ORDER BY c.created_at DESC`,
+        [user.userId]
+      );
+      res.json(rows);
     } else {
       const [rows] = await pool.query(
         `SELECT c.*, u.name AS teacher_name,
@@ -84,7 +99,7 @@ router.post('/', authMiddleware, teacherOnly, async (req: Request, res: Response
 router.post('/join/:code', authMiddleware, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    if (user.role !== 'STUDENT') {
+    if (user.role !== 'STUDENT' && user.role !== 'ADMIN') {
       res.status(403).json({ error: '학생만 학급에 참여할 수 있습니다' });
       return;
     }
@@ -131,22 +146,26 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Authorization: owner teacher OR enrolled student
-    let isMember = false;
-    if (user.role === 'STUDENT') {
-      const [m] = await pool.query(
-        'SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?',
-        [req.params.id, user.userId]
-      );
-      isMember = (m as any[]).length > 0;
-    }
-    const isOwner = user.role === 'TEACHER' && classroom.teacher_id === user.userId;
-    if (!isOwner && !isMember) {
+    // Authorization & view mode:
+    //   OWNER       — the teacher/admin who created it → full management
+    //   PARTICIPANT — an enrolled member (student, or admin who joined) → can write
+    //   VIEWER      — an admin who neither owns nor joined → read-only oversight
+    const [m] = await pool.query(
+      'SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?',
+      [req.params.id, user.userId]
+    );
+    const isMember = (m as any[]).length > 0;
+    const isOwner = (user.role === 'TEACHER' || user.role === 'ADMIN') && classroom.teacher_id === user.userId;
+    const isAdmin = user.role === 'ADMIN';
+
+    if (!isOwner && !isMember && !isAdmin) {
       res.status(403).json({ error: '접근 권한이 없습니다' });
       return;
     }
 
-    // Members (teacher only sees the roster)
+    const viewMode = isOwner ? 'OWNER' : (isMember ? 'PARTICIPANT' : 'VIEWER');
+
+    // Roster is only exposed to the owner.
     let members: any[] = [];
     if (isOwner) {
       const [mRows] = await pool.query(
@@ -158,17 +177,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       members = mRows as any[];
     }
 
-    // Assignments in this classroom (+ this student's submission status)
+    // OWNER and VIEWER get the oversight list (submission counts); PARTICIPANT
+    // gets their own per-assignment submission status so they can write.
     let assignments: any[];
-    if (isOwner) {
-      const [aRows] = await pool.query(
-        `SELECT a.*,
-            (SELECT COUNT(*) FROM submissions s WHERE s.assignment_id = a.id) AS submission_count
-         FROM assignments a WHERE a.classroom_id = ? ORDER BY a.created_at DESC`,
-        [req.params.id]
-      );
-      assignments = aRows as any[];
-    } else {
+    if (viewMode === 'PARTICIPANT') {
       const [aRows] = await pool.query(
         `SELECT a.*, sub.id AS my_submission_id, sub.status AS my_status
          FROM assignments a
@@ -177,9 +189,17 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
         [user.userId, req.params.id]
       );
       assignments = aRows as any[];
+    } else {
+      const [aRows] = await pool.query(
+        `SELECT a.*,
+            (SELECT COUNT(*) FROM submissions s WHERE s.assignment_id = a.id) AS submission_count
+         FROM assignments a WHERE a.classroom_id = ? ORDER BY a.created_at DESC`,
+        [req.params.id]
+      );
+      assignments = aRows as any[];
     }
 
-    res.json({ classroom, members, assignments });
+    res.json({ classroom, members, assignments, viewMode });
   } catch (err) {
     console.error('Get classroom error:', err);
     res.status(500).json({ error: '학급 정보를 불러올 수 없습니다' });

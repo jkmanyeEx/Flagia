@@ -29,6 +29,26 @@ router.get('/', auth_1.authMiddleware, async (req, res) => {
       `;
             params = [user.userId];
         }
+        else if (user.role === 'ADMIN' && req.query.scope === 'all') {
+            // Admin oversight: every assignment across all teachers. teacher_id is
+            // included (via a.*) so the client can flag which ones the admin owns and
+            // therefore may manage; my_submission_id/my_status let the admin resume
+            // any assignment they were personally invited to.
+            query = `
+        SELECT a.*,
+          (SELECT COUNT(*) FROM submissions s WHERE s.assignment_id = a.id) as submission_count,
+          u.name as teacher_name,
+          c.name as classroom_name,
+          sub.id as my_submission_id,
+          sub.status as my_status
+        FROM assignments a
+        JOIN users u ON a.teacher_id = u.id
+        LEFT JOIN classrooms c ON a.classroom_id = c.id
+        LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = ?
+        ORDER BY a.created_at DESC
+      `;
+            params = [user.userId];
+        }
         else {
             // Students see: standalone assignments they directly joined (have a
             // submission for), plus every assignment in a classroom they belong to.
@@ -62,7 +82,7 @@ router.get('/', auth_1.authMiddleware, async (req, res) => {
 router.get('/my-submissions', auth_1.authMiddleware, async (req, res) => {
     try {
         const user = req.user;
-        if (user.role !== 'STUDENT') {
+        if (user.role !== 'STUDENT' && user.role !== 'ADMIN') {
             res.status(403).json({ error: '학생만 접근할 수 있습니다' });
             return;
         }
@@ -97,7 +117,7 @@ router.get('/join/:code', auth_1.authMiddleware, async (req, res) => {
 router.post('/join/:code', auth_1.authMiddleware, async (req, res) => {
     try {
         const user = req.user;
-        if (user.role !== 'STUDENT') {
+        if (user.role !== 'STUDENT' && user.role !== 'ADMIN') {
             res.status(403).json({ error: '학생만 과제에 참여할 수 있습니다' });
             return;
         }
@@ -185,9 +205,22 @@ router.post('/', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => 
         res.status(500).json({ error: '과제를 생성할 수 없습니다' });
     }
 });
-// GET /api/assignments/:id/submissions — teacher view submissions with scores
+// GET /api/assignments/:id/submissions — teacher view submissions with scores.
+// Restricted to the assignment's owner (so an admin can only open submissions
+// for assignments they created, not other teachers').
 router.get('/:id/submissions', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
     try {
+        const user = req.user;
+        const [ownerRows] = await database_1.default.query('SELECT teacher_id FROM assignments WHERE id = ?', [req.params.id]);
+        const owner = ownerRows[0];
+        if (!owner) {
+            res.status(404).json({ error: '과제를 찾을 수 없습니다' });
+            return;
+        }
+        if (owner.teacher_id !== user.userId) {
+            res.status(403).json({ error: '본인이 만든 과제만 열람할 수 있습니다' });
+            return;
+        }
         const [rows] = await database_1.default.query(`SELECT s.*, u.name as student_name, u.email as student_email
        FROM submissions s
        JOIN users u ON s.student_id = u.id

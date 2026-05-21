@@ -14,7 +14,9 @@ onMounted(() => {
     router.replace('/login')
     return
   }
-  if (user.value?.role === 'TEACHER') {
+  // Teachers and admins land on the assignment-management dashboard; students
+  // on their assignment list.
+  if (user.value?.role === 'TEACHER' || user.value?.role === 'ADMIN') {
     router.replace('/teacher')
   } else {
     router.replace('/student')

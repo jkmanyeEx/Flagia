@@ -342,7 +342,19 @@ router.post('/:id/events', auth_1.authMiddleware, async (req, res) => {
 // POST /api/submissions/:id/grade — grade a submission (teacher only)
 router.post('/:id/grade', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
     try {
+        const user = req.user;
         const { score, feedback } = req.body;
+        // Only the owning teacher (or owning admin) may grade.
+        const [ownerRows] = await database_1.default.query(`SELECT a.teacher_id FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = ?`, [req.params.id]);
+        const owner = ownerRows[0];
+        if (!owner) {
+            res.status(404).json({ error: '제출물을 찾을 수 없습니다' });
+            return;
+        }
+        if (owner.teacher_id !== user.userId) {
+            res.status(403).json({ error: '본인이 만든 과제의 제출물만 채점할 수 있습니다' });
+            return;
+        }
         await database_1.default.query('UPDATE submissions SET score = ?, feedback = ? WHERE id = ?', [score !== undefined && score !== null ? score : null, feedback || null, req.params.id]);
         // Also update cached analysis_json if it exists to keep everything in sync
         const [subRows] = await database_1.default.query('SELECT assignment_id, student_id FROM submissions WHERE id = ?', [req.params.id]);

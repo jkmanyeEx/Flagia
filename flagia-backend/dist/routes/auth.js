@@ -50,7 +50,7 @@ router.post('/register', async (req, res) => {
             res.status(400).json({ error: '모든 필드를 입력해 주세요' });
             return;
         }
-        if (!['TEACHER', 'STUDENT'].includes(role)) {
+        if (!['TEACHER', 'STUDENT', 'ADMIN'].includes(role)) {
             res.status(400).json({ error: '유효하지 않은 역할입니다' });
             return;
         }

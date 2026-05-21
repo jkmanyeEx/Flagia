@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 export interface AuthPayload {
     userId: string;
-    role: 'TEACHER' | 'STUDENT';
+    role: 'TEACHER' | 'STUDENT' | 'ADMIN';
 }
 export declare function signToken(payload: AuthPayload): string;
 export declare function verifyToken(token: string): AuthPayload;

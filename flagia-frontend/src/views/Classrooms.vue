@@ -5,7 +5,10 @@ import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 
 const router = useRouter()
-const { user, token } = useAuth()
+const { user, token, isAdmin } = useAuth()
+
+function owns(c: any) { return c?.teacher_id === user.value?.id }
+function joined(c: any) { return Number(c?.is_member) > 0 }
 
 const classrooms = ref<any[]>([])
 const loading = ref(true)
@@ -77,17 +80,21 @@ async function joinClassroom() {
       <div>
         <h1 class="text-2xl font-bold text-text-primary">학급</h1>
         <p class="text-sm text-text-secondary mt-1">
-          {{ user?.role === 'TEACHER'
-            ? '학급을 만들고 학생을 초대해 과제를 운영하세요.'
-            : '참여 코드로 학급에 입장하고 배정된 과제를 확인하세요.' }}
+          {{ isAdmin
+            ? '모든 학급을 열람할 수 있습니다. 본인이 만들었거나 참여한 학급만 관리할 수 있습니다.'
+            : user?.role === 'TEACHER'
+              ? '학급을 만들고 학생을 초대해 과제를 운영하세요.'
+              : '참여 코드로 학급에 입장하고 배정된 과제를 확인하세요.' }}
         </p>
       </div>
-      <button v-if="user?.role === 'TEACHER'" @click="showCreateModal = true" class="btn btn-primary">
-        + 새 학급 만들기
-      </button>
-      <button v-else @click="showJoinModal = true" class="btn btn-primary">
-        코드로 참여하기
-      </button>
+      <div class="flex items-center gap-2">
+        <button v-if="user?.role === 'TEACHER' || isAdmin" @click="showCreateModal = true" class="btn btn-primary">
+          + 새 학급 만들기
+        </button>
+        <button v-if="user?.role === 'STUDENT' || isAdmin" @click="showJoinModal = true" class="btn btn-outline">
+          코드로 참여하기
+        </button>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -97,10 +104,10 @@ async function joinClassroom() {
     <div v-else-if="classrooms.length === 0" class="card p-12 text-center">
       <div class="text-4xl mb-3">🏫</div>
       <p class="text-text-primary font-medium mb-1">
-        {{ user?.role === 'TEACHER' ? '아직 만든 학급이 없습니다' : '참여한 학급이 없습니다' }}
+        {{ isAdmin ? '아직 생성된 학급이 없습니다' : user?.role === 'TEACHER' ? '아직 만든 학급이 없습니다' : '참여한 학급이 없습니다' }}
       </p>
       <p class="text-sm text-text-muted">
-        {{ user?.role === 'TEACHER' ? '첫 학급을 만들어 학생을 초대하세요.' : '선생님께 받은 참여 코드를 입력하세요.' }}
+        {{ isAdmin ? '교사가 학급을 만들면 여기에 표시됩니다.' : user?.role === 'TEACHER' ? '첫 학급을 만들어 학생을 초대하세요.' : '선생님께 받은 참여 코드를 입력하세요.' }}
       </p>
     </div>
 
@@ -116,13 +123,21 @@ async function joinClassroom() {
           <h3 class="text-lg font-bold text-text-primary">{{ c.name }}</h3>
           <span class="font-mono text-xs bg-background px-2 py-0.5 rounded border border-border">{{ c.join_code }}</span>
         </div>
+
+        <!-- Admin: ownership / membership indicator -->
+        <div v-if="isAdmin" class="mb-2">
+          <span v-if="owns(c)" class="badge badge-green text-xs">내 학급</span>
+          <span v-else-if="joined(c)" class="badge badge-amber text-xs">참여 중</span>
+          <span v-else class="badge text-xs bg-background text-text-muted">보기 전용</span>
+        </div>
+
         <p v-if="c.description" class="text-sm text-text-secondary mb-4 line-clamp-2">{{ c.description }}</p>
         <p v-else class="text-sm text-text-muted italic mb-4">설명 없음</p>
 
         <div class="flex items-center gap-4 text-xs text-text-muted">
           <span>👥 학생 {{ c.member_count ?? 0 }}명</span>
           <span>📝 과제 {{ c.assignment_count ?? 0 }}개</span>
-          <span v-if="user?.role === 'STUDENT' && c.teacher_name">👤 {{ c.teacher_name }}</span>
+          <span v-if="(user?.role === 'STUDENT' || isAdmin) && c.teacher_name">👤 {{ c.teacher_name }}</span>
         </div>
       </div>
     </div>

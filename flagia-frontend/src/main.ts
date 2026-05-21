@@ -55,15 +55,18 @@ router.beforeEach(async (to) => {
   }
 
   // Role-based access control: keep each role out of the other's pages.
+  // ADMIN is dual-context and may access both teacher and student pages.
   const role = user.value?.role
-  const teacherOnlyRoutes = ['teacher']
-  const studentOnlyRoutes = ['student-home', 'editor', 'join']
+  if (role !== 'ADMIN') {
+    const teacherOnlyRoutes = ['teacher']
+    const studentOnlyRoutes = ['student-home', 'editor', 'join']
 
-  if (teacherOnlyRoutes.includes(to.name as string) && role !== 'TEACHER') {
-    return { name: 'student-home' }
-  }
-  if (studentOnlyRoutes.includes(to.name as string) && role !== 'STUDENT') {
-    return { name: 'teacher' }
+    if (teacherOnlyRoutes.includes(to.name as string) && role !== 'TEACHER') {
+      return { name: 'student-home' }
+    }
+    if (studentOnlyRoutes.includes(to.name as string) && role !== 'STUDENT') {
+      return { name: 'teacher' }
+    }
   }
 })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
@@ -7,7 +7,7 @@ import RichTextEditor from '../components/RichTextEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { user, token } = useAuth()
+const { token } = useAuth()
 
 const loading = ref(true)
 const error = ref('')
@@ -15,7 +15,14 @@ const classroom = ref<any>(null)
 const members = ref<any[]>([])
 const assignments = ref<any[]>([])
 
-const isTeacher = ref(false)
+// Backend tells us how this user relates to the classroom:
+//   OWNER       — created it → full management
+//   PARTICIPANT — joined member → student-style participation (write)
+//   VIEWER      — admin oversight → read-only
+const viewMode = ref<'OWNER' | 'PARTICIPANT' | 'VIEWER'>('PARTICIPANT')
+const isOwner = computed(() => viewMode.value === 'OWNER')
+const isParticipant = computed(() => viewMode.value === 'PARTICIPANT')
+const isViewer = computed(() => viewMode.value === 'VIEWER')
 const copySuccess = ref(false)
 
 // Create assignment modal (teacher)
@@ -33,7 +40,7 @@ async function load() {
     classroom.value = data.classroom
     members.value = data.members || []
     assignments.value = data.assignments || []
-    isTeacher.value = user.value?.role === 'TEACHER' && classroom.value.teacher_id === user.value?.id
+    viewMode.value = data.viewMode || 'VIEWER'
   } catch (e: any) {
     error.value = e.message || '학급 정보를 불러올 수 없습니다'
   } finally {
@@ -95,9 +102,15 @@ function openAssignment(a: any) {
     router.push(`/editor/${a.id}`)
   }
 }
-// Teacher: open submissions for an assignment
+// Teacher/owner: open submissions for an assignment
 function openSubmissions(a: any) {
   router.push(`/teacher?assignment=${a.id}`)
+}
+
+// Row click dispatches by view mode; viewers (read-only) do nothing.
+function onAssignmentRow(a: any) {
+  if (isOwner.value) openSubmissions(a)
+  else if (isParticipant.value) openAssignment(a)
 }
 
 function statusLabel(s: string) {
@@ -132,8 +145,9 @@ function statusLabel(s: string) {
             <p v-if="classroom.description" class="text-sm text-text-secondary mb-3">{{ classroom.description }}</p>
             <div class="flex items-center gap-4 text-xs text-text-muted">
               <span>👤 {{ classroom.teacher_name }}</span>
-              <span v-if="isTeacher">👥 학생 {{ members.length }}명</span>
+              <span v-if="isOwner">👥 학생 {{ members.length }}명</span>
               <span>📝 과제 {{ assignments.length }}개</span>
+              <span v-if="isViewer" class="badge text-xs bg-background text-text-muted">관리자 보기 전용</span>
             </div>
           </div>
 
@@ -150,8 +164,8 @@ function statusLabel(s: string) {
           </div>
         </div>
 
-        <!-- Teacher controls -->
-        <div v-if="isTeacher" class="flex items-center gap-3 mt-5 pt-4 border-t border-border">
+        <!-- Owner controls -->
+        <div v-if="isOwner" class="flex items-center gap-3 mt-5 pt-4 border-t border-border">
           <button @click="showCreateModal = true" class="btn btn-primary btn-sm">+ 새 과제</button>
           <button @click="showDeleteModal = true" class="btn btn-ghost btn-sm text-danger ml-auto">학급 삭제</button>
         </div>
@@ -168,9 +182,9 @@ function statusLabel(s: string) {
               <th>제목</th>
               <th>마감일</th>
               <th>모드</th>
-              <th v-if="isTeacher">제출</th>
-              <th v-else>상태</th>
-              <th class="text-right">{{ isTeacher ? '관리' : '' }}</th>
+              <th v-if="isParticipant">상태</th>
+              <th v-else>제출</th>
+              <th class="text-right">{{ isParticipant ? '' : '관리' }}</th>
             </tr>
           </thead>
           <tbody>
@@ -181,36 +195,38 @@ function statusLabel(s: string) {
               v-else
               v-for="a in assignments"
               :key="a.id"
-              @click="isTeacher ? openSubmissions(a) : openAssignment(a)"
-              class="cursor-pointer hover:bg-background"
+              @click="onAssignmentRow(a)"
+              :class="isViewer ? 'cursor-default' : 'cursor-pointer hover:bg-background'"
             >
               <td class="font-medium text-text-primary">{{ a.title }}</td>
               <td class="text-text-secondary text-sm">{{ formatDate(a.due_date) }}</td>
               <td><span class="badge badge-green text-xs">{{ getModeLabel(a.mode) }}</span></td>
-              <td v-if="isTeacher" class="text-text-secondary text-sm">{{ a.submission_count ?? 0 }}명</td>
-              <td v-else>
+              <!-- Participant sees their own status; owner/viewer see submission counts -->
+              <td v-if="isParticipant">
                 <span class="badge text-xs" :class="{
                   'badge-green': a.my_status === 'SUBMITTED',
                   'badge-amber': a.my_status === 'IN_PROGRESS',
                   'badge-red': a.my_status === 'FORCE_CLOSED',
                 }">{{ statusLabel(a.my_status) }}</span>
               </td>
+              <td v-else class="text-text-secondary text-sm">{{ a.submission_count ?? 0 }}명</td>
               <td class="text-right">
                 <button
-                  v-if="!isTeacher"
+                  v-if="isParticipant"
                   @click.stop="openAssignment(a)"
                   class="btn btn-primary btn-xs"
                 >
                   {{ a.my_status === 'SUBMITTED' || a.my_status === 'FORCE_CLOSED' ? '분석 보기' : (a.my_status === 'IN_PROGRESS' ? '이어 쓰기' : '시작하기') }}
                 </button>
+                <span v-else-if="isViewer" class="text-xs text-text-muted">보기 전용</span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Members (teacher) -->
-      <div v-if="isTeacher" class="card overflow-hidden">
+      <!-- Members (owner only) -->
+      <div v-if="isOwner" class="card overflow-hidden">
         <div class="p-4 border-b border-border bg-background/50">
           <h3 class="font-semibold text-text-primary">학생 명단 ({{ members.length }})</h3>
         </div>
