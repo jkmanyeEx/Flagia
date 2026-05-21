@@ -169,7 +169,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 router.post('/', authMiddleware, teacherOnly, async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { title, dueDate, timeLimit, textLimit, maxScore, templateText, mode, classroomId, continuable } = req.body;
+    const { title, dueDate, timeLimit, textLimit, maxScore, templateText, mode, classroomId } = req.body;
 
     if (!title || !dueDate || !timeLimit) {
       res.status(400).json({ error: '필수 항목을 모두 입력해 주세요' });
@@ -196,9 +196,9 @@ router.post('/', authMiddleware, teacherOnly, async (req: Request, res: Response
     const id = uuidv4();
     const joinCode = uuidv4().replace(/-/g, '').substring(0, 6).toUpperCase();
     await pool.query(
-      `INSERT INTO assignments (id, teacher_id, classroom_id, title, due_date, time_limit, text_limit, max_score, template_text, mode, continuable, join_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, user.userId, classroomId || null, title, new Date(dueDate), timeLimit || 60, textLimit || 3000, maxScore || 100, templateText || '', mode || 'STANDARD', continuable ? 1 : 0, joinCode]
+      `INSERT INTO assignments (id, teacher_id, classroom_id, title, due_date, time_limit, text_limit, max_score, template_text, mode, join_code)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, user.userId, classroomId || null, title, new Date(dueDate), timeLimit || 60, textLimit || 3000, maxScore || 100, templateText || '', mode || 'STANDARD', joinCode]
     );
 
     const [rows] = await pool.query(

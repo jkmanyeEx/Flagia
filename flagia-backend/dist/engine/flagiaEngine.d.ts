@@ -15,7 +15,7 @@ interface TelemetryEvent {
     seq: number;
     timestamp: number;
     iki: number;
-    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action';
+    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect';
     meta: {
         key?: string;
         cursorPosition?: number;

@@ -19,11 +19,13 @@ jobs:
           
           # 1. Navigate directly to the step's checked-out frontend folder
           cd flagia-frontend
+          npm ci --verbose  # <-- --verbose forces npm to output every single line of download work
           npm install
           npm run build
           
           # 2. Navigate directly to the backend folder
           cd ../flagia-backend
+          npm ci --verbose  # <-- --verbose forces npm to output every single line of download work
           npm install
           npm run build
           

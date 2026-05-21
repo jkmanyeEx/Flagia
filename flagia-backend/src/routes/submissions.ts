@@ -164,6 +164,31 @@ router.put('/:id/submit', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
+// PUT /api/submissions/:id/draft — periodic auto-save of in-progress work.
+// Persists the latest markdown and the cumulative active writing time so the
+// countdown timer can resume (rather than reset) when the student reopens the
+// editor. time_spent_sec is clamped monotonically (GREATEST) and capped at the
+// assignment's time budget, so it can never be rolled back to gain extra time.
+router.put('/:id/draft', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { markdown, timeSpentSec } = req.body;
+    const safeSpent = Math.max(0, Math.floor(Number(timeSpentSec) || 0));
+
+    await pool.query(
+      `UPDATE submissions s
+       JOIN assignments a ON s.assignment_id = a.id
+       SET s.final_markdown = COALESCE(?, s.final_markdown),
+           s.time_spent_sec = LEAST(a.time_limit * 60, GREATEST(s.time_spent_sec, ?))
+       WHERE s.id = ? AND s.status = 'IN_PROGRESS'`,
+      [markdown ?? null, safeSpent, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Draft save error:', err);
+    res.status(500).json({ error: '임시 저장에 실패했습니다' });
+  }
+});
+
 // GET /api/submissions/:id/analysis — detailed analysis data
 router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -327,36 +352,23 @@ router.get('/:id/events', authMiddleware, async (req: Request, res: Response) =>
 
 
 // POST /api/submissions/:id/beacon — fired on window close via sendBeacon.
-// For a normal assignment this finalizes the submission (FORCE_CLOSED). For a
-// `continuable` assignment we only persist the latest draft and keep the
-// submission IN_PROGRESS so the student can come back and resume.
+// Every assignment is resumable, so this never submits: it just persists the
+// latest draft and leaves the submission IN_PROGRESS. The actual "left the
+// site" timestamp is recorded server-side as a `leave` event when the
+// WebSocket disconnects (see websocket.ts).
 router.post('/:id/beacon', async (req: Request, res: Response) => {
   try {
-    const { finalMarkdown } = req.body;
+    const { finalMarkdown, timeSpentSec } = req.body;
+    const safeSpent = Math.max(0, Math.floor(Number(timeSpentSec) || 0));
 
-    // Determine whether this submission's assignment allows resuming.
-    const [flagRows] = await pool.query(
-      `SELECT a.continuable
-       FROM submissions s JOIN assignments a ON s.assignment_id = a.id
-       WHERE s.id = ?`,
-      [req.params.id]
+    await pool.query(
+      `UPDATE submissions s
+       JOIN assignments a ON s.assignment_id = a.id
+       SET s.final_markdown = ?,
+           s.time_spent_sec = LEAST(a.time_limit * 60, GREATEST(s.time_spent_sec, ?))
+       WHERE s.id = ? AND s.status = 'IN_PROGRESS'`,
+      [finalMarkdown || '', safeSpent, req.params.id]
     );
-    const continuable = !!(flagRows as any[])[0]?.continuable;
-
-    if (continuable) {
-      // Save draft only — do not submit, keep status so it can be resumed.
-      await pool.query(
-        `UPDATE submissions SET final_markdown = ?
-         WHERE id = ? AND status = 'IN_PROGRESS'`,
-        [finalMarkdown || '', req.params.id]
-      );
-    } else {
-      await pool.query(
-        `UPDATE submissions SET final_markdown = ?, status = 'FORCE_CLOSED', submitted_at = NOW()
-         WHERE id = ? AND status = 'IN_PROGRESS'`,
-        [finalMarkdown || '', req.params.id]
-      );
-    }
 
     const [subRows] = await pool.query('SELECT assignment_id, student_id FROM submissions WHERE id = ?', [req.params.id]);
     const sub = (subRows as any[])[0];

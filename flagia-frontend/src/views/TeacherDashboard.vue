@@ -33,7 +33,6 @@ const form = ref({
   maxScore: 100,
   templateText: '',
   mode: 'STANDARD',
-  continuable: false,
 })
 const creating = ref(false)
 const copySuccess = ref(false)
@@ -191,14 +190,13 @@ async function createAssignment() {
         maxScore: form.value.maxScore,
         templateText: form.value.templateText,
         mode: form.value.mode,
-        continuable: form.value.continuable,
       }),
     })
     if (res.ok) {
       const newA = await res.json()
       assignments.value.unshift(newA)
       showCreateModal.value = false
-      form.value = { title: '', dueDate: '', timeLimit: 60, textLimit: 3000, maxScore: 100, templateText: '', mode: 'STANDARD', continuable: false }
+      form.value = { title: '', dueDate: '', timeLimit: 60, textLimit: 3000, maxScore: 100, templateText: '', mode: 'STANDARD' }
       selectAssignment(newA)
     }
   } catch { /* noop */ } finally { creating.value = false }
@@ -530,29 +528,6 @@ function getGaugeOffset(score: number) {
           <div>
             <label class="label">최대 배점 (만점 기준)</label>
             <input v-model.number="form.maxScore" type="number" class="input" min="1" max="1000" placeholder="100" />
-          </div>
-
-          <div>
-            <label class="label">제출 방식</label>
-            <div
-              @click="form.continuable = !form.continuable"
-              class="mode-option flex items-start gap-3 cursor-pointer"
-              :class="{ selected: form.continuable }"
-            >
-              <div
-                class="mt-0.5 w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors"
-                :class="form.continuable ? 'bg-primary border-primary text-white' : 'border-border bg-white'"
-              >
-                <svg v-if="form.continuable" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-              <div>
-                <div class="font-bold text-text-primary mb-1">이어쓰기 허용 (Continuable)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">
-                  활성화하면 학생이 창을 닫아도 자동 제출되지 않고, 나중에 다시 들어와 이어서 작성할 수 있습니다. '과제 목록으로 돌아가기' 버튼이 표시됩니다.<br>
-                  비활성화 시 창을 닫으면 작성 중이던 글이 즉시 제출됩니다. (시험·평가용 기본값)
-                </div>
-              </div>
-            </div>
           </div>
 
           <div>

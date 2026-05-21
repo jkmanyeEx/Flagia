@@ -24,11 +24,8 @@ const loading = ref(true)
 const wsConnected = ref(false)
 const submitting = ref(false)
 
-const showLeaveModal = ref(false)
 const showSubmitModal = ref(false)
-const pendingRoute = ref<string | null>(null)
 const bypassLeaveGuard = ref(false)
-const initialContent = ref('')
 
 // Timer
 const timerSeconds = ref(0)
@@ -58,10 +55,6 @@ const readingTime = computed(() => {
 // Rendered html (Not needed for rich text editor, but kept for compatibility if needed elsewhere, though we now edit HTML directly)
 const renderedHtml = computed(() => content.value)
 
-// Continuable assignments let the student close/leave and resume later instead
-// of auto-submitting on window close. (DB returns 0/1, coerce to boolean.)
-const continuable = computed(() => !!assignment.value?.continuable)
-
 // ── Telemetry ──
 let ws: WebSocket | null = null
 let eventBuffer: any[] = []
@@ -70,6 +63,19 @@ let lastKeyTime = 0
 let timerInterval: any = null
 let flushInterval: any = null
 let autoSaveInterval: any = null
+
+// Active-writing-time tracking. The countdown is a budget of *active* seconds
+// (assignment.time_limit minutes) that persists across sessions: leaving the
+// site pauses it, reopening resumes it. baseSpentSec is the time already used
+// in prior sessions (loaded from the server); sessionStartMs anchors this
+// session's elapsed time to wall-clock so background-tab throttling can't drift it.
+let baseSpentSec = 0
+let sessionStartMs = 0
+
+function currentSpentSec(): number {
+  if (!sessionStartMs) return baseSpentSec
+  return baseSpentSec + (Date.now() - sessionStartMs) / 1000
+}
 
 function computeIKI() {
   const now = Date.now()
@@ -205,15 +211,21 @@ function handleVisibility() {
 // ── Timer ──
 function startTimer() {
   if (!assignment.value) return
-  timerSeconds.value = assignment.value.time_limit * 60
-  timerInterval = setInterval(() => {
-    if (timerSeconds.value <= 0) {
-      clearInterval(timerInterval)
-      handleTimeExpired()
-      return
-    }
-    timerSeconds.value--
-  }, 1000)
+  // Resume from time already spent in earlier sessions instead of resetting.
+  baseSpentSec = Math.max(0, Number(submission.value?.time_spent_sec) || 0)
+  sessionStartMs = Date.now()
+  tickTimer()
+  timerInterval = setInterval(tickTimer, 1000)
+}
+
+function tickTimer() {
+  const totalSec = (assignment.value?.time_limit || 0) * 60
+  const remaining = Math.max(0, totalSec - currentSpentSec())
+  timerSeconds.value = Math.ceil(remaining)
+  if (remaining <= 0) {
+    clearInterval(timerInterval)
+    handleTimeExpired()
+  }
 }
 
 function handleTimeExpired() {
@@ -248,32 +260,32 @@ async function submitEssay(forceClose = false) {
   }
 }
 
-// ── Beacon fallback ──
-// Always fired on window close. The server decides what to do with it based on
-// the assignment's `continuable` flag: for non-continuable assignments it
-// finalizes the submission (FORCE_CLOSED); for continuable ones it just saves
-// the latest draft and keeps the submission IN_PROGRESS so it can be resumed.
+// ── Beacon draft-save on window close ──
+// Every assignment is resumable, so closing the window never submits — this
+// just persists the latest draft (the 30s auto-save may not have run yet).
+// The "left the site" timestamp is recorded server-side as a `leave` event
+// when the WebSocket disconnects, so the disconnected interval can be excluded
+// from writing-time analysis.
 function beaconSubmit() {
   if (submitted.value || !submission.value) return
-  const data = JSON.stringify({ finalMarkdown: content.value })
+  const data = JSON.stringify({ finalMarkdown: content.value, timeSpentSec: Math.round(currentSpentSec()) })
   navigator.sendBeacon(`${API}/api/submissions/${submission.value.id}/beacon`, new Blob([data], { type: 'application/json' }))
 }
 
 // Persist the current content as a draft without submitting. Used by the
-// periodic auto-save and the "save & back to list" action on continuable
-// assignments.
+// periodic auto-save, the leave guard, and the "save & back to list" action.
 async function saveDraft() {
   if (!submission.value || submitted.value) return
   try {
     await fetch(`${API}/api/submissions/${submission.value.id}/draft`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
-      body: JSON.stringify({ markdown: content.value }),
+      body: JSON.stringify({ markdown: content.value, timeSpentSec: Math.round(currentSpentSec()) }),
     })
   } catch { /* noop */ }
 }
 
-// Continuable-only: save the draft and return to the assignment list cleanly.
+// Save the draft and return to the assignment list cleanly (resume later).
 async function saveAndExit() {
   await saveDraft()
   bypassLeaveGuard.value = true
@@ -313,7 +325,6 @@ onMounted(async () => {
 
     // Set initial content
     content.value = submission.value.final_markdown || assignment.value.template_text || ''
-    initialContent.value = content.value
 
     // Connect WS
     connectWS()
@@ -322,8 +333,8 @@ onMounted(async () => {
     // Periodic flush (every 5s)
     flushInterval = setInterval(flushEvents, 5000)
 
-    // Auto-save draft (every 30s)
-    autoSaveInterval = setInterval(saveDraft, 30000)
+    // Auto-save draft + elapsed time (every 15s)
+    autoSaveInterval = setInterval(saveDraft, 15000)
   } catch (err) {
     console.error('Init error:', err)
   } finally {
@@ -348,36 +359,13 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibility)
 })
 
-const hasUnsavedChanges = computed(() => {
-  if (submitted.value) return false
-  return content.value !== initialContent.value
-})
-
-onBeforeRouteLeave((to) => {
+onBeforeRouteLeave(() => {
   if (bypassLeaveGuard.value) return true
-  // Continuable assignments can be left freely — silently persist the draft so
-  // the student can resume later, and allow navigation without a warning.
-  if (continuable.value && !submitted.value) {
-    saveDraft()
-    return true
-  }
-  if (hasUnsavedChanges.value) {
-    showLeaveModal.value = true
-    pendingRoute.value = to.fullPath
-    return false
-  }
+  // Every assignment is resumable — leaving is always allowed. Silently persist
+  // the draft so the student can come back and continue where they left off.
+  if (!submitted.value) saveDraft()
   return true
 })
-
-function confirmLeave() {
-  showLeaveModal.value = false
-  bypassLeaveGuard.value = true
-  if (pendingRoute.value) {
-    router.push(pendingRoute.value)
-  } else {
-    router.push('/student')
-  }
-}
 
 async function confirmSubmit() {
   await submitEssay(false)
@@ -443,8 +431,8 @@ async function confirmSubmit() {
           {{ timerDisplay }}
         </div>
 
-        <!-- Continuable: save & return to list (resume later) -->
-        <button v-if="continuable" @click="saveAndExit" class="btn btn-outline btn-sm" :disabled="submitting">
+        <!-- Save & return to list (resume later) -->
+        <button @click="saveAndExit" class="btn btn-outline btn-sm" :disabled="submitting">
           저장하고 과제 목록으로
         </button>
 
@@ -481,19 +469,6 @@ async function confirmSubmit() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Leaving Confirmation Modal -->
-    <div v-if="showLeaveModal" class="modal-overlay" @click.self="showLeaveModal = false">
-      <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">⚠️</div>
-        <h3 class="text-lg font-bold mb-2">작성 취소</h3>
-        <p class="text-sm text-text-secondary mb-6">아직 제출하지 않은 내용이 있습니다.<br>정말 나가시겠습니까? 작성 중인 내용은 저장되지 않을 수 있습니다.</p>
-        <div class="flex gap-2">
-          <button @click="showLeaveModal = false" class="btn btn-outline flex-1">계속 작성</button>
-          <button @click="confirmLeave" class="btn btn-primary flex-1">나가기</button>
         </div>
       </div>
     </div>

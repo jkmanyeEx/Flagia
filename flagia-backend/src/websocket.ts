@@ -95,10 +95,25 @@ export function initWebSocket(server: HttpServer) {
             const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || '';
             const userAgent = req.headers['user-agent'] || '';
 
+            // If this submission already has prior sessions, the student is
+            // resuming after having left the site. Seed the new session with a
+            // `reconnect` marker (server time) so the analysis engine can pair
+            // it with the previous `leave` and exclude that disconnected gap
+            // from writing time. Both markers use server time, so the gap
+            // duration is accurate regardless of any client clock skew.
+            const [priorRows] = await pool.query(
+              'SELECT COUNT(*) AS c FROM sessions WHERE submission_id = ?',
+              [submissionId]
+            );
+            const isResume = ((priorRows as any[])[0]?.c || 0) > 0;
+            const seedBlob = isResume
+              ? JSON.stringify([{ seq: 0, timestamp: Date.now(), iki: 0, type: 'reconnect', meta: {}, currentHash: '' }])
+              : '[]';
+
             await pool.query(
               `INSERT INTO sessions (id, submission_id, start_time, ip_address, user_agent, events_blob)
-               VALUES (?, ?, NOW(), ?, ?, '[]')`,
-              [sessionId, submissionId, ip, userAgent]
+               VALUES (?, ?, NOW(), ?, ?, ?)`,
+              [sessionId, submissionId, ip, userAgent, seedBlob]
             );
 
             clientState.sessionId = sessionId;
@@ -220,11 +235,26 @@ export function initWebSocket(server: HttpServer) {
       const closedUserId = clientState?.user?.userId;
 
       if (closedSessionId) {
-        // Close session on disconnect
-        await pool.query(
-          'UPDATE sessions SET end_time = NOW() WHERE id = ? AND end_time IS NULL',
-          [closedSessionId]
-        ).catch(() => {});
+        // Record a `leave` marker (student left the site / closed the tab) with
+        // server time, then close the session. The engine pairs this with the
+        // next session's `reconnect` marker to subtract the disconnected gap
+        // from writing time.
+        try {
+          const [rows] = await pool.query(
+            'SELECT events_blob FROM sessions WHERE id = ?',
+            [closedSessionId]
+          );
+          const session = (rows as any[])[0];
+          let evs: any[] = [];
+          if (session?.events_blob) {
+            try { evs = JSON.parse(session.events_blob); } catch { evs = []; }
+          }
+          evs.push({ seq: 0, timestamp: Date.now(), iki: 0, type: 'leave', meta: {}, currentHash: '' });
+          await pool.query(
+            'UPDATE sessions SET events_blob = ?, end_time = NOW() WHERE id = ? AND end_time IS NULL',
+            [JSON.stringify(evs), closedSessionId]
+          );
+        } catch { /* noop */ }
       }
 
       // Remove from rooms

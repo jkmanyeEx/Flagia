@@ -16,7 +16,9 @@ interface TelemetryEvent {
   seq: number;
   timestamp: number;
   iki: number;
-  type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action';
+  // `leave`/`reconnect` are server-injected markers bounding a period when the
+  // student had left the site; the gap between them is excluded from writing time.
+  type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect';
   meta: {
     key?: string;
     cursorPosition?: number;
@@ -535,11 +537,38 @@ export function runFlagiaAnalysis(
   const pasteScore = Math.round(pasteVolumeScore * 0.6 + pasteCountScore * 0.4);
   const blurScore = scoreBlurDuration(totalBlurDuration);
 
-  // ── Writing-time score: derived from session span vs. final text length ──
-  const eventTimestamps = events.map(e => e.timestamp).filter(t => t > 0);
-  const totalDurationSec = eventTimestamps.length >= 2
-    ? (Math.max(...eventTimestamps) - Math.min(...eventTimestamps)) / 1000
+  // ── Writing-time score: derived from active session span vs. final text length ──
+  // The student may have left the site and come back; that wall-clock gap is NOT
+  // writing time. We sum every (leave → reconnect) gap and subtract it from the
+  // overall span. leave/reconnect carry server timestamps, so each gap duration
+  // is accurate regardless of client clock skew; subtracting an accurate
+  // duration from the (client-time) activity span yields the real active time.
+  let disconnectedMs = 0;
+  let reconnectCount = 0;
+  let pendingLeave: number | null = null;
+  for (const e of events) {
+    if (e.type === 'leave') {
+      pendingLeave = e.timestamp;
+    } else if (e.type === 'reconnect') {
+      reconnectCount++;
+      if (pendingLeave !== null) {
+        const gap = e.timestamp - pendingLeave;
+        if (gap > 0 && gap < 86400000) disconnectedMs += gap; // ignore >24h / negative
+        pendingLeave = null;
+      }
+    }
+  }
+
+  // Span is measured over real activity only (exclude the leave/reconnect
+  // markers so their server timestamps don't skew the bounds).
+  const activityTimestamps = events
+    .filter(e => e.type !== 'leave' && e.type !== 'reconnect')
+    .map(e => e.timestamp)
+    .filter(t => t > 0);
+  const rawSpanSec = activityTimestamps.length >= 2
+    ? (Math.max(...activityTimestamps) - Math.min(...activityTimestamps)) / 1000
     : 0;
+  const totalDurationSec = Math.max(0, rawSpanSec - disconnectedMs / 1000);
   const timeScore = scoreWritingTime(totalDurationSec, effectiveTextLength);
 
   // ── Composite Flagia Score ──
@@ -613,8 +642,11 @@ export function runFlagiaAnalysis(
   };
 
   // ── Timeline & blur intervals ──
-  const timeline = buildTimeline(events);
-  const blurIntervals = buildBlurIntervals(events);
+  // Build over real activity only; the server-injected leave/reconnect markers
+  // would otherwise shift the bucket bounds by any client/server clock offset.
+  const activityEvents = events.filter(e => e.type !== 'leave' && e.type !== 'reconnect');
+  const timeline = buildTimeline(activityEvents);
+  const blurIntervals = buildBlurIntervals(activityEvents);
 
   // ── Session Summary ──
   const avgWPM = totalDurationSec > 0
@@ -623,7 +655,7 @@ export function runFlagiaAnalysis(
 
   const sessionSummary: SessionSummary = {
     totalDurationSec: Math.round(totalDurationSec),
-    sessionCount: 1,
+    sessionCount: reconnectCount + 1,
     totalKeystrokes: totalKeydowns,
     totalCharactersTyped: effectiveTextLength,
     averageWPM: avgWPM,
