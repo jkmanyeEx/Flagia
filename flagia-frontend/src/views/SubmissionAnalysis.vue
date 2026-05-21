@@ -191,17 +191,19 @@ function getTimelineBucketColor(bucket: any) {
 }
 
 // Replay Mechanics
-const minTime = computed(() => {
-  if (!events.value || events.value.length === 0) return 0
-  const times = events.value.map(e => e.timestamp).filter(t => t > 0)
-  return times.length > 0 ? Math.min(...times) : 0
-})
-
-const maxTime = computed(() => {
-  if (!events.value || events.value.length === 0) return 0
-  const times = events.value.map(e => e.timestamp).filter(t => t > 0)
-  return times.length > 0 ? Math.max(...times) : 0
-})
+// Bound the timeline to real writing activity only. The server injects
+// `leave`/`reconnect` markers whose timestamps are when the WebSocket
+// closed/reopened — which can be long after the writing finished (e.g. the tab
+// was reopened later), stretching the replay's end out to "now". Excluding them
+// makes the replay end at the last actual keystroke/paste/blur instead.
+const activityTimes = computed(() =>
+  (events.value || [])
+    .filter(e => e.type !== 'leave' && e.type !== 'reconnect')
+    .map(e => e.timestamp)
+    .filter(t => t > 0)
+)
+const minTime = computed(() => activityTimes.value.length > 0 ? Math.min(...activityTimes.value) : 0)
+const maxTime = computed(() => activityTimes.value.length > 0 ? Math.max(...activityTimes.value) : 0)
 
 const replayTotalMs = computed(() => {
   return maxTime.value - minTime.value
