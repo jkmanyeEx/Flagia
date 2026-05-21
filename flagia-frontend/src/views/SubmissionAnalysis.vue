@@ -8,6 +8,9 @@ import { api } from '../composables/useApi'
 const route = useRoute()
 const router = useRouter()
 const { user, token } = useAuth()
+// Teacher-style access (replay room, grading, "submissions" nav). Admins are
+// treated as staff here so they get the same review tools as teachers.
+const isStaff = computed(() => user.value?.role === 'TEACHER' || user.value?.role === 'ADMIN')
 
 const loading = ref(true)
 const error = ref('')
@@ -492,7 +495,7 @@ watch(data, (newVal) => {
 }, { immediate: true })
 
 function goBack() {
-  if (user.value?.role === 'TEACHER') {
+  if (isStaff.value) {
     // Return to the specific assignment's submission list, not the bare dashboard.
     const aid = submission.value?.assignmentId
     router.push(aid ? `/teacher?assignment=${aid}` : '/teacher')
@@ -502,7 +505,7 @@ function goBack() {
 }
 
 const backLabel = computed(() =>
-  user.value?.role === 'TEACHER' ? '제출 목록으로 돌아가기' : '내 과제로 돌아가기'
+  isStaff.value ? '제출 목록으로 돌아가기' : '내 과제로 돌아가기'
 )
 </script>
 
@@ -537,7 +540,7 @@ const backLabel = computed(() =>
       </button>
       <div class="flex items-center gap-2 text-sm text-text-muted">
         <button @click="goBack" class="hover:text-primary transition-colors">
-          {{ user?.role === 'TEACHER' ? '제출 목록' : '내 과제' }}
+          {{ isStaff ? '제출 목록' : '내 과제' }}
         </button>
         <span>/</span>
         <span class="text-text-secondary">분석 리포트</span>
@@ -554,7 +557,7 @@ const backLabel = computed(() =>
         <span>📊</span> 분석 리포트
       </button>
       <button 
-        v-if="user?.role === 'TEACHER' && events.length > 0"
+        v-if="isStaff && events.length > 0"
         @click="activeTab = 'replay'" 
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'replay' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
@@ -1006,7 +1009,7 @@ const backLabel = computed(() =>
       <!-- Right Column: Grading Form & Metrics Overview -->
       <div class="col-span-1 space-y-6">
         <!-- Teacher Grading Panel -->
-        <div v-if="user?.role === 'TEACHER'" class="card p-6 border-indigo-100 shadow-sm bg-indigo-50/20">
+        <div v-if="isStaff" class="card p-6 border-indigo-100 shadow-sm bg-indigo-50/20">
           <h2 class="text-sm font-bold text-indigo-900 mb-4 flex items-center gap-1.5">
             <span>✏️</span> 제출물 채점 및 피드백
           </h2>
