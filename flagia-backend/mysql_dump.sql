@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS assignments (
   max_score INT NOT NULL DEFAULT 100 COMMENT 'Maximum score possible',
   template_text TEXT COMMENT 'Markdown guideline template',
   mode ENUM('STRICT', 'STANDARD', 'RESEARCH', 'CREATIVE') NOT NULL DEFAULT 'STANDARD',
+  continuable BOOLEAN NOT NULL DEFAULT FALSE COMMENT 'If true, student may close/leave and resume later instead of auto-submitting on close',
   join_code VARCHAR(8) NOT NULL UNIQUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

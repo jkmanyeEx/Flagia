@@ -58,6 +58,10 @@ const readingTime = computed(() => {
 // Rendered html (Not needed for rich text editor, but kept for compatibility if needed elsewhere, though we now edit HTML directly)
 const renderedHtml = computed(() => content.value)
 
+// Continuable assignments let the student close/leave and resume later instead
+// of auto-submitting on window close. (DB returns 0/1, coerce to boolean.)
+const continuable = computed(() => !!assignment.value?.continuable)
+
 // ── Telemetry ──
 let ws: WebSocket | null = null
 let eventBuffer: any[] = []
@@ -245,10 +249,35 @@ async function submitEssay(forceClose = false) {
 }
 
 // ── Beacon fallback ──
+// Always fired on window close. The server decides what to do with it based on
+// the assignment's `continuable` flag: for non-continuable assignments it
+// finalizes the submission (FORCE_CLOSED); for continuable ones it just saves
+// the latest draft and keeps the submission IN_PROGRESS so it can be resumed.
 function beaconSubmit() {
   if (submitted.value || !submission.value) return
   const data = JSON.stringify({ finalMarkdown: content.value })
   navigator.sendBeacon(`${API}/api/submissions/${submission.value.id}/beacon`, new Blob([data], { type: 'application/json' }))
+}
+
+// Persist the current content as a draft without submitting. Used by the
+// periodic auto-save and the "save & back to list" action on continuable
+// assignments.
+async function saveDraft() {
+  if (!submission.value || submitted.value) return
+  try {
+    await fetch(`${API}/api/submissions/${submission.value.id}/draft`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
+      body: JSON.stringify({ markdown: content.value }),
+    })
+  } catch { /* noop */ }
+}
+
+// Continuable-only: save the draft and return to the assignment list cleanly.
+async function saveAndExit() {
+  await saveDraft()
+  bypassLeaveGuard.value = true
+  router.push('/student')
 }
 
 // ── Split pane drag ──
@@ -294,13 +323,7 @@ onMounted(async () => {
     flushInterval = setInterval(flushEvents, 5000)
 
     // Auto-save draft (every 30s)
-    autoSaveInterval = setInterval(() => {
-      fetch(`${API}/api/submissions/${submission.value.id}/draft`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
-        body: JSON.stringify({ markdown: content.value }),
-      }).catch(() => {})
-    }, 30000)
+    autoSaveInterval = setInterval(saveDraft, 30000)
   } catch (err) {
     console.error('Init error:', err)
   } finally {
@@ -332,6 +355,12 @@ const hasUnsavedChanges = computed(() => {
 
 onBeforeRouteLeave((to) => {
   if (bypassLeaveGuard.value) return true
+  // Continuable assignments can be left freely — silently persist the draft so
+  // the student can resume later, and allow navigation without a warning.
+  if (continuable.value && !submitted.value) {
+    saveDraft()
+    return true
+  }
   if (hasUnsavedChanges.value) {
     showLeaveModal.value = true
     pendingRoute.value = to.fullPath
@@ -413,6 +442,11 @@ async function confirmSubmit() {
         <div class="timer" :class="{ 'timer-danger': timerDanger }">
           {{ timerDisplay }}
         </div>
+
+        <!-- Continuable: save & return to list (resume later) -->
+        <button v-if="continuable" @click="saveAndExit" class="btn btn-outline btn-sm" :disabled="submitting">
+          저장하고 과제 목록으로
+        </button>
 
         <!-- Submit -->
         <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="submitting || wordCount === 0">

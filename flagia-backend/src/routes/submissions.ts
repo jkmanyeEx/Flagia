@@ -326,15 +326,38 @@ router.get('/:id/events', authMiddleware, async (req: Request, res: Response) =>
 });
 
 
-// POST /api/submissions/:id/beacon — emergency submit via sendBeacon
+// POST /api/submissions/:id/beacon — fired on window close via sendBeacon.
+// For a normal assignment this finalizes the submission (FORCE_CLOSED). For a
+// `continuable` assignment we only persist the latest draft and keep the
+// submission IN_PROGRESS so the student can come back and resume.
 router.post('/:id/beacon', async (req: Request, res: Response) => {
   try {
     const { finalMarkdown } = req.body;
-    await pool.query(
-      `UPDATE submissions SET final_markdown = ?, status = 'FORCE_CLOSED', submitted_at = NOW()
-       WHERE id = ? AND status = 'IN_PROGRESS'`,
-      [finalMarkdown || '', req.params.id]
+
+    // Determine whether this submission's assignment allows resuming.
+    const [flagRows] = await pool.query(
+      `SELECT a.continuable
+       FROM submissions s JOIN assignments a ON s.assignment_id = a.id
+       WHERE s.id = ?`,
+      [req.params.id]
     );
+    const continuable = !!(flagRows as any[])[0]?.continuable;
+
+    if (continuable) {
+      // Save draft only — do not submit, keep status so it can be resumed.
+      await pool.query(
+        `UPDATE submissions SET final_markdown = ?
+         WHERE id = ? AND status = 'IN_PROGRESS'`,
+        [finalMarkdown || '', req.params.id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE submissions SET final_markdown = ?, status = 'FORCE_CLOSED', submitted_at = NOW()
+         WHERE id = ? AND status = 'IN_PROGRESS'`,
+        [finalMarkdown || '', req.params.id]
+      );
+    }
+
     const [subRows] = await pool.query('SELECT assignment_id, student_id FROM submissions WHERE id = ?', [req.params.id]);
     const sub = (subRows as any[])[0];
     if (sub) {
