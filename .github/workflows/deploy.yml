@@ -67,5 +67,37 @@ jobs:
           done
           echo "Migrations applied."
 
+      # Provision a MySQL user for remote (Cloudflare Tunnel) access. The tunnel
+      # proxies tcp://localhost:3306, so connections arrive from 127.0.0.1 — hence
+      # the '@127.0.0.1' host. Idempotent; skips unless the secrets are set. Uses
+      # the privileged migration account (which has GRANT OPTION) to create it.
+      - name: Provision remote (tunnel) DB user
+        continue-on-error: true
+        env:
+          DB_HOST: 127.0.0.1
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_ADMIN_USER: ${{ secrets.DB_MIGRATE_USER }}
+          DB_ADMIN_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+          REMOTE_USER: ${{ secrets.DB_REMOTE_USER }}
+          REMOTE_PASS: ${{ secrets.DB_REMOTE_PASS }}
+        run: |
+          if ! command -v mysql >/dev/null 2>&1; then echo "no mysql client"; exit 0; fi
+          if [ -z "$DB_ADMIN_USER" ] || [ -z "$DB_NAME" ]; then
+            echo "Admin DB secrets not set; skipping remote user provisioning."; exit 0
+          fi
+          if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_PASS" ]; then
+            echo "DB_REMOTE_USER / DB_REMOTE_PASS not set; skipping remote user provisioning."; exit 0
+          fi
+          SQL_FILE="$(mktemp)"
+          {
+            printf "CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY '%s';\n" "$REMOTE_USER" "$REMOTE_PASS"
+            printf "ALTER USER '%s'@'127.0.0.1' IDENTIFIED BY '%s';\n" "$REMOTE_USER" "$REMOTE_PASS"
+            printf "GRANT ALL PRIVILEGES ON %s.* TO '%s'@'127.0.0.1';\n" "$DB_NAME" "$REMOTE_USER"
+            printf "FLUSH PRIVILEGES;\n"
+          } > "$SQL_FILE"
+          mysql --host="$DB_HOST" --user="$DB_ADMIN_USER" --password="$DB_ADMIN_PASS" < "$SQL_FILE"
+          rm -f "$SQL_FILE"
+          echo "Provisioned ${REMOTE_USER}@127.0.0.1 with ALL PRIVILEGES on ${DB_NAME}.*"
+
       - name: Restart PM2 process manager
         run: pm2 restart all
