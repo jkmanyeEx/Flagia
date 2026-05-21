@@ -88,6 +88,7 @@ jobs:
           if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_PASS" ]; then
             echo "DB_REMOTE_USER / DB_REMOTE_PASS not set; skipping remote user provisioning."; exit 0
           fi
+          set -e  # surface a real failure (the step is continue-on-error, so it won't block the deploy)
           SQL_FILE="$(mktemp)"
           {
             printf "CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY '%s';\n" "$REMOTE_USER" "$REMOTE_PASS"
