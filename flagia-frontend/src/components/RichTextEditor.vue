@@ -47,6 +47,20 @@ watch(() => props.disabled, (val) => {
   editor.value?.setEditable(!val)
 })
 
+const getSelectionDetails = (editorInstance: any) => {
+  if (!editorInstance) return { cursor: 0, selectionLength: 0 }
+  try {
+    const { anchor, head } = editorInstance.state.selection
+    const start = Math.min(anchor, head)
+    const end = Math.max(anchor, head)
+    const cursor = editorInstance.state.doc.textBetween(0, start, '\n').length
+    const selectionLength = editorInstance.state.doc.textBetween(0, end, '\n').length - cursor
+    return { cursor, selectionLength }
+  } catch (err) {
+    return { cursor: 0, selectionLength: 0 }
+  }
+}
+
 onBeforeUnmount(() => {
   editor.value?.destroy()
 })
@@ -92,8 +106,8 @@ onBeforeUnmount(() => {
     
     <div 
       class="editor-content-container" 
-      @keydown="(e) => emit('keydown', e, editor?.state.selection.anchor)"
-      @paste="(e) => emit('paste', e, editor?.state.selection.anchor)"
+      @keydown="(e) => emit('keydown', e, getSelectionDetails(editor))"
+      @paste="(e) => emit('paste', e, getSelectionDetails(editor))"
     >
       <editor-content :editor="editor" />
     </div>

@@ -134,6 +134,8 @@ async function fetchAssignmentsSilently() {
   } catch { /* noop */ }
 }
 
+let refreshInterval: any = null
+
 onMounted(async () => {
   try {
     const res = await fetch(listUrl, {
@@ -145,6 +147,15 @@ onMounted(async () => {
   } catch { /* noop */ } finally { loading.value = false }
   connectWS()
 
+  // Polling fallback: auto-refresh submissions or assignments list every 5 seconds
+  refreshInterval = setInterval(() => {
+    if (selectedAssignment.value) {
+      fetchSubmissionsSilently()
+    } else {
+      fetchAssignmentsSilently()
+    }
+  }, 5000)
+
   // Returning from an analysis report? Re-open that assignment's submissions.
   const aid = route.query.assignment as string | undefined
   if (aid) {
@@ -154,6 +165,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
   if (socket) {
     const s = socket
     socket = null

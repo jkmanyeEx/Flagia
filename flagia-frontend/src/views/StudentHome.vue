@@ -85,6 +85,8 @@ async function joinAssignment() {
   }
 }
 
+let refreshInterval: any = null
+
 onMounted(async () => {
   try {
     const [aRes, sRes] = await Promise.all([
@@ -96,9 +98,17 @@ onMounted(async () => {
     if (sRes.ok) submissions.value = await (sRes as Response).json()
   } catch { /* noop */ } finally { loading.value = false }
   connectWS()
+
+  // Polling fallback: auto-refresh assignment list every 5 seconds
+  refreshInterval = setInterval(() => {
+    refreshDataSilently()
+  }, 5000)
 })
 
 onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
   if (socket) {
     const s = socket
     socket = null

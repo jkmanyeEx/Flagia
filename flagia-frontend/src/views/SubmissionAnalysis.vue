@@ -166,6 +166,9 @@ function getTimelineMaxKeystroke() {
 
 function getTimelineBucketHeight(bucket: any) {
   const max = getTimelineMaxKeystroke()
+  if (bucket.isBlurred || bucket.pasteCount > 0) {
+    return 100
+  }
   return Math.max(3, (bucket.keystrokeCount / max) * 100)
 }
 
@@ -280,6 +283,10 @@ function composeSyllable(cho: string, jung: string, jong: string): string {
   return String.fromCharCode(0xAC00 + (ci * 21 + ji) * 28 + gi)
 }
 
+const hasValidCursorData = computed(() => {
+  return events.value.some(e => e.type === 'keydown' && e.meta && typeof e.meta.cursorPosition === 'number' && e.meta.cursorPosition > 0)
+})
+
 const replayState = computed(() => {
   if (!events.value || events.value.length === 0) {
     return {
@@ -297,10 +304,15 @@ const replayState = computed(() => {
   let committed = templatePlain.value
   // Active composition buffer
   let cho = '', jung = '', jong = ''
-  const hasBuf = () => cho || jung || jong
+  let compStartPos = committed.length
+  const hasBuf = () => !!(cho || jung || jong)
   const renderBuf = () => hasBuf() ? composeSyllable(cho, jung, jong) : ''
   const flushBuf = () => {
-    if (hasBuf()) committed += renderBuf()
+    if (hasBuf()) {
+      const bufText = renderBuf()
+      committed = committed.slice(0, compStartPos) + bufText + committed.slice(compStartPos)
+      compStartPos += bufText.length
+    }
     cho = ''; jung = ''; jong = ''
   }
   let keystrokeCount = 0
@@ -315,8 +327,17 @@ const replayState = computed(() => {
     const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
     const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
 
+    const cursorPosition = hasValidCursorData.value && e.meta && typeof e.meta.cursorPosition === 'number'
+      ? e.meta.cursorPosition
+      : undefined
+
+    const selectionLength = hasValidCursorData.value && e.meta && typeof e.meta.selectionLength === 'number'
+      ? e.meta.selectionLength
+      : 0
+
+    const pos = (typeof cursorPosition === 'number') ? cursorPosition : committed.length
+
     if (e.type === 'keydown') {
-      keystrokeCount++
       const key = e.meta?.key
 
       // Skip keyboard shortcuts (Ctrl/Cmd/Alt held) and control/navigation
@@ -325,30 +346,51 @@ const replayState = computed(() => {
         continue
       }
 
+      // If the cursor jumped during an active composition, flush the buffer first
+      if (hasBuf() && pos !== compStartPos && pos !== compStartPos + 1) {
+        flushBuf()
+      }
+
+      keystrokeCount++
+
+      // If selection exists, delete the range before applying the keystroke
+      if (selectionLength > 0) {
+        flushBuf()
+        committed = committed.slice(0, pos) + committed.slice(pos + selectionLength)
+      }
+
       if (key === 'Backspace') {
-        // Delete one logical step from the composing buffer first,
-        // then fall through to committed text.
-        if (jong) {
-          const d = DECOMPOSE_JONG[jong]
-          jong = d ? d[0] : ''
-        } else if (jung) {
-          const d = DECOMPOSE_JUNG[jung]
-          jung = d ? d[0] : ''
-        } else if (cho) {
-          cho = ''
-        } else {
-          committed = committed.slice(0, -1)
+        if (selectionLength === 0) {
+          // Delete one logical step from the composing buffer first,
+          // then fall through to committed text.
+          if (jong) {
+            const d = DECOMPOSE_JONG[jong]
+            jong = d ? d[0] : ''
+          } else if (jung) {
+            const d = DECOMPOSE_JUNG[jung]
+            jung = d ? d[0] : ''
+          } else if (cho) {
+            cho = ''
+          } else {
+            if (pos > 0) {
+              committed = committed.slice(0, pos - 1) + committed.slice(pos)
+            }
+          }
         }
       } else if (key === 'Enter') {
         flushBuf()
-        committed += '\n'
+        committed = committed.slice(0, pos) + '\n' + committed.slice(pos)
       } else if (key && isJamo(key)) {
+        if (!hasBuf()) {
+          compStartPos = pos
+        }
         if (isJung(key)) {
           // Vowel
           if (!cho) {
             // Standalone vowel — no IME initial. Commit raw.
             flushBuf()
-            committed += key
+            committed = committed.slice(0, compStartPos) + key + committed.slice(compStartPos)
+            compStartPos += 1
           } else if (!jung) {
             jung = key
           } else if (!jong) {
@@ -357,7 +399,9 @@ const replayState = computed(() => {
               jung = cj
             } else {
               flushBuf()
-              committed += key
+              compStartPos = pos
+              committed = committed.slice(0, compStartPos) + key + committed.slice(compStartPos)
+              compStartPos += 1
             }
           } else {
             // cho+jung+jong, new vowel → last jong (or its tail) becomes
@@ -403,7 +447,7 @@ const replayState = computed(() => {
       } else if (key && key.length === 1) {
         // Plain ASCII / printable character.
         flushBuf()
-        committed += key
+        committed = committed.slice(0, pos) + key + committed.slice(pos)
       }
       // Modifier / navigation keys: ignored (no buffer change).
     } else if (e.type === 'paste') {
@@ -411,7 +455,13 @@ const replayState = computed(() => {
       pasteCount++
       const len = e.meta?.pasteLength || 0
       const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
-      committed += pastedText
+      
+      // If selection exists, delete the range before pasting
+      if (selectionLength > 0) {
+        committed = committed.slice(0, pos) + committed.slice(pos + selectionLength)
+      }
+      
+      committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
       logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
     } else if (e.type === 'blur') {
       flushBuf()
@@ -424,7 +474,7 @@ const replayState = computed(() => {
     }
   }
 
-  const text = committed + renderBuf()
+  const text = committed.slice(0, compStartPos) + renderBuf() + committed.slice(compStartPos)
 
   const windowStart = thresholdTime - 30000
   const recentEvents = events.value.filter(

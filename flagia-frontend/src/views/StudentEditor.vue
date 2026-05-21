@@ -163,24 +163,26 @@ function connectWS() {
 }
 
 // ── Keyboard handlers ──
-function handleKeydown(e: KeyboardEvent, cursor?: number) {
+function handleKeydown(e: KeyboardEvent, selection?: { cursor: number; selectionLength: number }) {
   if (isLocked.value) return
   pushEvent('keydown', {
     key: e.key,
-    cursorPosition: cursor ?? 0,
+    cursorPosition: selection?.cursor ?? 0,
+    selectionLength: selection?.selectionLength ?? 0,
     // Capture modifier state so the replay can distinguish a shortcut
     // (e.g. Ctrl/Cmd+B) from a literal character keystroke.
     mod: e.ctrlKey || e.metaKey || e.altKey,
   })
 }
 
-function handlePaste(e: ClipboardEvent, cursor?: number) {
+function handlePaste(e: ClipboardEvent, selection?: { cursor: number; selectionLength: number }) {
   if (isLocked.value) { e.preventDefault(); return }
   const text = e.clipboardData?.getData('text') || ''
   pushEvent('paste', { 
     pasteLength: text.length,
     pasteContent: text,
-    cursorPosition: cursor ?? 0
+    cursorPosition: selection?.cursor ?? 0,
+    selectionLength: selection?.selectionLength ?? 0,
   })
 }
 
@@ -461,8 +463,8 @@ async function confirmSubmit() {
           v-model="content"
           :disabled="isLocked"
           placeholder="여기에 글을 작성하세요..."
-          @keydown="handleKeydown"
-          @paste="handlePaste"
+          @keydown="(e, selection) => handleKeydown(e, selection)"
+          @paste="(e, selection) => handlePaste(e, selection)"
         />
         
         <!-- Text stats & limit warning -->
