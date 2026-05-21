@@ -113,7 +113,7 @@ interface TimelineBucket {
   pasteCount: number;
 }
 
-function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): TimelineBucket[] {
+function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, totalDurationMs?: number): TimelineBucket[] {
   if (!eventsList || eventsList.length === 0) return [];
 
   const timestamps = eventsList.map(e => e.timestamp).filter(t => t > 0);
@@ -122,10 +122,12 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): Time
   const minT = Math.min(...timestamps);
   const maxT = Math.max(...timestamps);
 
+  const endT = totalDurationMs ? Math.max(maxT, minT + totalDurationMs) : maxT;
+
   const buckets: TimelineBucket[] = [];
   let currentStart = minT;
 
-  while (currentStart < maxT + bucketSizeMs) {
+  while (currentStart < endT) {
     const currentEnd = currentStart + bucketSizeMs;
     const bucketEvents = eventsList.filter(e => e.timestamp >= currentStart && e.timestamp < currentEnd);
     
@@ -156,7 +158,10 @@ const timeline = computed(() => {
   if (!events.value || events.value.length === 0) {
     return analysis.value?.timeline || []
   }
-  return buildTimeline(events.value, bucketSizeSec.value * 1000)
+  const totalDurationMs = analysis.value?.sessionSummary?.totalDurationSec
+    ? analysis.value.sessionSummary.totalDurationSec * 1000
+    : undefined;
+  return buildTimeline(events.value, bucketSizeSec.value * 1000, totalDurationMs)
 })
 
 function getTimelineMaxKeystroke() {
@@ -749,38 +754,40 @@ const backLabel = computed(() =>
           </div>
         </div>
 
-        <div class="timeline-bar">
-          <div
-            v-for="(bucket, i) in timeline"
-            :key="i"
-            class="timeline-bucket"
-            :style="{
-              background: getTimelineBucketColor(bucket),
-              height: getTimelineBucketHeight(bucket) + '%',
-              alignSelf: 'flex-end',
-            }"
-          >
-            <!-- Custom Interactive Hover Card Tooltip -->
-            <div class="timeline-tooltip font-sans text-xs">
-              <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
-                <span>구간 #{{ Number(i) + 1 }}</span>
-                <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">⌨️ 키 입력</span>
-                <span class="font-bold">{{ bucket.keystrokeCount }}회</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">⏱️ 평균 IKI</span>
-                <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
-              </div>
-              <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
-                <span>📋 붙여넣기</span>
-                <span>{{ bucket.pasteCount }}회</span>
-              </div>
-              <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
-                <span>⚠️ 에디터 이탈</span>
-                <span>감지됨</span>
+        <div class="timeline-bar-wrapper">
+          <div class="timeline-bar">
+            <div
+              v-for="(bucket, i) in timeline"
+              :key="i"
+              class="timeline-bucket"
+              :style="{
+                background: getTimelineBucketColor(bucket),
+                height: getTimelineBucketHeight(bucket) + '%',
+                alignSelf: 'flex-end',
+              }"
+            >
+              <!-- Custom Interactive Hover Card Tooltip -->
+              <div class="timeline-tooltip font-sans text-xs">
+                <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
+                  <span>구간 #{{ Number(i) + 1 }}</span>
+                  <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">⌨️ 키 입력</span>
+                  <span class="font-bold">{{ bucket.keystrokeCount }}회</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">⏱️ 평균 IKI</span>
+                  <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
+                </div>
+                <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
+                  <span>📋 붙여넣기</span>
+                  <span>{{ bucket.pasteCount }}회</span>
+                </div>
+                <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
+                  <span>⚠️ 에디터 이탈</span>
+                  <span>감지됨</span>
+                </div>
               </div>
             </div>
           </div>

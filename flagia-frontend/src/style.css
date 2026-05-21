@@ -563,16 +563,38 @@ select.input {
 .metric-card.status-danger { border-left: 4px solid var(--color-flag-red); }
 
 /* ── Timeline ── */
+.timeline-bar-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-top: 140px;
+  margin-top: -120px;
+  pointer-events: none;
+}
+.timeline-bar-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+.timeline-bar-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+.timeline-bar-wrapper::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+.timeline-bar-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
 .timeline-bar {
   display: flex;
   height: 120px;
   border-radius: 0.375rem;
   background: var(--color-background);
   gap: 1px;
+  pointer-events: auto;
 }
 .timeline-bucket {
-  flex: 1;
-  min-width: 3px;
+  flex: 1 0 auto;
+  min-width: 8px;
   transition: all 0.15s ease;
   position: relative;
 }
