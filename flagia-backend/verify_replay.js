@@ -211,6 +211,7 @@ async function main() {
     
     // Strip HTML from final_markdown to compare plain text
     const expectedPlain = final_markdown
+      .replace(/<\/p><p>/g, '\n')
       .replace(/<[^>]*>/g, '')
       .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>');

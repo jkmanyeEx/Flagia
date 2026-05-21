@@ -14,6 +14,23 @@ const emit = defineEmits(['update:modelValue', 'keydown', 'paste', 'blur', 'focu
 
 const isFocused = ref(false)
 
+// Pre-transaction selection capture — set by ProseMirror's editorProps hooks
+// BEFORE the transaction modifies the document. This is the key fix for accurate
+// telemetry: the Vue @keydown handler fires AFTER PM processes the key, so
+// reading selection there gives post-change positions.
+const lastSelectionBeforeEvent = ref({ cursor: 0, selectionLength: 0 })
+
+function captureSelection(view: any) {
+  try {
+    const { anchor, head } = view.state.selection
+    const start = Math.min(anchor, head)
+    const end = Math.max(anchor, head)
+    const cursor = view.state.doc.textBetween(0, start, '\n').length
+    const selectionLength = view.state.doc.textBetween(0, end, '\n').length - cursor
+    lastSelectionBeforeEvent.value = { cursor, selectionLength }
+  } catch { /* noop */ }
+}
+
 const editor = useEditor({
   extensions: [
     StarterKit,
@@ -23,6 +40,18 @@ const editor = useEditor({
   ],
   content: props.modelValue,
   editable: !props.disabled,
+  editorProps: {
+    // These hooks fire BEFORE ProseMirror processes the event, giving us the
+    // exact pre-transaction selection for accurate telemetry capture.
+    handleKeyDown: (view: any) => {
+      captureSelection(view)
+      return false // let ProseMirror handle the key normally
+    },
+    handlePaste: (view: any) => {
+      captureSelection(view)
+      return false
+    },
+  },
   onUpdate: ({ editor }) => {
     emit('update:modelValue', editor.getHTML())
   },
@@ -106,8 +135,8 @@ onBeforeUnmount(() => {
     
     <div 
       class="editor-content-container" 
-      @keydown="(e) => emit('keydown', e, getSelectionDetails(editor))"
-      @paste="(e) => emit('paste', e, getSelectionDetails(editor))"
+      @keydown="(e) => emit('keydown', e, lastSelectionBeforeEvent)"
+      @paste="(e) => emit('paste', e, lastSelectionBeforeEvent)"
     >
       <editor-content :editor="editor" />
     </div>

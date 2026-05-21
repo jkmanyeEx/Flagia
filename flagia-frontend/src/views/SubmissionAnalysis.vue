@@ -111,9 +111,16 @@ interface TimelineBucket {
   avgIki: number;
   isBlurred: boolean;
   pasteCount: number;
+  isGap?: boolean;
+  gapDurationMs?: number;
+  collapsedCount?: number;
 }
 
-function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, totalDurationMs?: number): TimelineBucket[] {
+function isEmptyBucket(b: TimelineBucket): boolean {
+  return b.keystrokeCount === 0 && !b.isBlurred && b.pasteCount === 0
+}
+
+function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): TimelineBucket[] {
   if (!eventsList || eventsList.length === 0) return [];
 
   const timestamps = eventsList.map(e => e.timestamp).filter(t => t > 0);
@@ -122,9 +129,9 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, total
   const minT = Math.min(...timestamps);
   const maxT = Math.max(...timestamps);
 
-  const endT = totalDurationMs ? Math.max(maxT, minT + totalDurationMs) : maxT;
+  const endT = maxT + bucketSizeMs;
 
-  const buckets: TimelineBucket[] = [];
+  const rawBuckets: TimelineBucket[] = [];
   let currentStart = minT;
 
   while (currentStart < endT) {
@@ -139,7 +146,7 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, total
     const isBlurred = bucketEvents.some(e => e.type === 'blur') && !bucketEvents.some(e => e.type === 'focus');
     const pasteCount = bucketEvents.filter(e => e.type === 'paste').length;
 
-    buckets.push({
+    rawBuckets.push({
       startMs: currentStart - minT,
       endMs: currentEnd - minT,
       keystrokeCount: keystrokes,
@@ -151,17 +158,53 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, total
     currentStart = currentEnd;
   }
 
-  return buckets;
+  // Collapse runs of 3+ consecutive empty buckets into a single gap marker
+  const GAP_THRESHOLD = 3;
+  const collapsed: TimelineBucket[] = [];
+  let i = 0;
+  while (i < rawBuckets.length) {
+    if (isEmptyBucket(rawBuckets[i])) {
+      let runEnd = i;
+      while (runEnd < rawBuckets.length && isEmptyBucket(rawBuckets[runEnd])) {
+        runEnd++;
+      }
+      const runLength = runEnd - i;
+      if (runLength >= GAP_THRESHOLD) {
+        // Collapse into a single gap bucket
+        const first = rawBuckets[i];
+        const last = rawBuckets[runEnd - 1];
+        collapsed.push({
+          startMs: first.startMs,
+          endMs: last.endMs,
+          keystrokeCount: 0,
+          avgIki: 0,
+          isBlurred: false,
+          pasteCount: 0,
+          isGap: true,
+          gapDurationMs: last.endMs - first.startMs,
+          collapsedCount: runLength,
+        });
+      } else {
+        // Keep short runs as-is
+        for (let j = i; j < runEnd; j++) {
+          collapsed.push(rawBuckets[j]);
+        }
+      }
+      i = runEnd;
+    } else {
+      collapsed.push(rawBuckets[i]);
+      i++;
+    }
+  }
+
+  return collapsed;
 }
 
 const timeline = computed(() => {
   if (!events.value || events.value.length === 0) {
     return analysis.value?.timeline || []
   }
-  const totalDurationMs = analysis.value?.sessionSummary?.totalDurationSec
-    ? analysis.value.sessionSummary.totalDurationSec * 1000
-    : undefined;
-  return buildTimeline(events.value, bucketSizeSec.value * 1000, totalDurationMs)
+  return buildTimeline(events.value, bucketSizeSec.value * 1000)
 })
 
 function getTimelineMaxKeystroke() {
@@ -170,6 +213,7 @@ function getTimelineMaxKeystroke() {
 }
 
 function getTimelineBucketHeight(bucket: any) {
+  if (bucket.isGap) return 15
   const max = getTimelineMaxKeystroke()
   if (bucket.isBlurred || bucket.pasteCount > 0) {
     return 100
@@ -178,6 +222,7 @@ function getTimelineBucketHeight(bucket: any) {
 }
 
 function getTimelineBucketColor(bucket: any) {
+  if (bucket.isGap) return 'transparent'
   if (bucket.isBlurred) return '#FDE68A'
   if (bucket.pasteCount > 0) return '#FCA5A5'
   if (bucket.keystrokeCount === 0) return '#E5E7EB'
@@ -278,6 +323,7 @@ function isJung(k: string) { return JUNG_LIST.includes(k) }
 // reconstructed document isn't missing its opening section.
 const templatePlain = computed(() =>
   (submission.value?.templateText || '')
+    .replace(/<\/p><p>/g, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -326,21 +372,68 @@ const replayState = computed(() => {
   let activeStatus = '작성 중'
   const logs: string[] = []
 
+  // ── Telemetry version detection ──
+  // v:2 = pre-transaction plain text offsets (accurate)
+  // no version = legacy post-transaction PM positions (best-effort mapping)
+  const isV2 = events.value.some((ev: any) => ev.meta?.v === 2)
+
+  // Formula 1 PM-to-plain mapping for legacy (Type A) events
+  function mapPmPosToPlainIndex(text: string, pmPos: number): number {
+    let newlines = 0
+    for (let idx = 0; idx <= text.length; idx++) {
+      const expectedPmPos = idx + 1 + newlines // Formula 1
+      if (expectedPmPos >= pmPos) return idx
+      if (text[idx] === '\n') newlines++
+    }
+    return text.length
+  }
+
+  // Korean dedup: filter rapid duplicate jamo events (<15ms) from legacy IME
+  let lastJamoKey = ''
+  let lastJamoTs = 0
+
   for (const e of events.value) {
     if (e.timestamp > thresholdTime) break
 
     const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
     const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
 
-    const cursorPosition = hasValidCursorData.value && e.meta && typeof e.meta.cursorPosition === 'number'
-      ? e.meta.cursorPosition
-      : undefined
+    // Korean dedup for legacy sessions: skip rapid duplicate jamo keydowns
+    if (!isV2 && e.type === 'keydown' && e.meta?.key && isJamo(e.meta.key)) {
+      if (e.meta.key === lastJamoKey && (e.timestamp - lastJamoTs) < 15) {
+        lastJamoTs = e.timestamp
+        continue // skip duplicate IME event
+      }
+      lastJamoKey = e.meta.key
+      lastJamoTs = e.timestamp
+    } else if (e.type === 'keydown') {
+      lastJamoKey = ''
+      lastJamoTs = 0
+    }
 
-    const selectionLength = hasValidCursorData.value && e.meta && typeof e.meta.selectionLength === 'number'
-      ? e.meta.selectionLength
-      : 0
+    // ── Position resolution ──
+    let pos: number
+    let selLen = 0
 
-    const pos = (typeof cursorPosition === 'number') ? cursorPosition : committed.length
+    if (isV2) {
+      // Type B: cursor positions are pre-transaction 0-based plain text offsets
+      pos = (e.meta && typeof e.meta.cursorPosition === 'number')
+        ? e.meta.cursorPosition
+        : committed.length
+      selLen = (e.meta && typeof e.meta.selectionLength === 'number')
+        ? e.meta.selectionLength
+        : 0
+    } else if (hasValidCursorData.value && e.meta && typeof e.meta.cursorPosition === 'number') {
+      // Type A: legacy PM positions → map to plain text via Formula 1
+      pos = mapPmPosToPlainIndex(committed, e.meta.cursorPosition)
+      if (e.meta.selectionLength > 0) {
+        const endPos = mapPmPosToPlainIndex(committed, e.meta.cursorPosition + e.meta.selectionLength)
+        selLen = endPos - pos
+      }
+    } else {
+      pos = committed.length
+      selLen = 0
+    }
 
     if (e.type === 'keydown') {
       const key = e.meta?.key
@@ -359,13 +452,13 @@ const replayState = computed(() => {
       keystrokeCount++
 
       // If selection exists, delete the range before applying the keystroke
-      if (selectionLength > 0) {
+      if (selLen > 0) {
         flushBuf()
-        committed = committed.slice(0, pos) + committed.slice(pos + selectionLength)
+        committed = committed.slice(0, pos) + committed.slice(pos + selLen)
       }
 
       if (key === 'Backspace') {
-        if (selectionLength === 0) {
+        if (selLen === 0) {
           // Delete one logical step from the composing buffer first,
           // then fall through to committed text.
           if (jong) {
@@ -377,8 +470,15 @@ const replayState = computed(() => {
           } else if (cho) {
             cho = ''
           } else {
+            // Type A backspaceFix: when the cursor is at a paragraph boundary
+            // (newline), PM's Backspace merges paragraphs (deletes the \n forward)
+            // rather than deleting the character before the cursor.
             if (pos > 0) {
-              committed = committed.slice(0, pos - 1) + committed.slice(pos)
+              if (!isV2 && committed[pos] === '\n') {
+                committed = committed.slice(0, pos) + committed.slice(pos + 1)
+              } else {
+                committed = committed.slice(0, pos - 1) + committed.slice(pos)
+              }
             }
           }
         }
@@ -462,8 +562,8 @@ const replayState = computed(() => {
       const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
       
       // If selection exists, delete the range before pasting
-      if (selectionLength > 0) {
-        committed = committed.slice(0, pos) + committed.slice(pos + selectionLength)
+      if (selLen > 0) {
+        committed = committed.slice(0, pos) + committed.slice(pos + selLen)
       }
       
       committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
@@ -756,40 +856,71 @@ const backLabel = computed(() =>
 
         <div class="timeline-bar-wrapper">
           <div class="timeline-bar">
-            <div
-              v-for="(bucket, i) in timeline"
-              :key="i"
-              class="timeline-bucket"
-              :style="{
-                background: getTimelineBucketColor(bucket),
-                height: getTimelineBucketHeight(bucket) + '%',
-                alignSelf: 'flex-end',
-              }"
-            >
-              <!-- Custom Interactive Hover Card Tooltip -->
-              <div class="timeline-tooltip font-sans text-xs">
-                <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
-                  <span>구간 #{{ Number(i) + 1 }}</span>
-                  <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
+            <template v-for="(bucket, i) in timeline" :key="i">
+              <!-- Gap marker -->
+              <div
+                v-if="bucket.isGap"
+                class="timeline-gap"
+              >
+                <div class="timeline-gap-line"></div>
+                <div class="timeline-gap-label">
+                  {{ formatDuration((bucket.gapDurationMs || 0) / 1000) }} 공백
                 </div>
-                <div class="flex justify-between">
-                  <span class="text-slate-400">⌨️ 키 입력</span>
-                  <span class="font-bold">{{ bucket.keystrokeCount }}회</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-slate-400">⏱️ 평균 IKI</span>
-                  <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
-                </div>
-                <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
-                  <span>📋 붙여넣기</span>
-                  <span>{{ bucket.pasteCount }}회</span>
-                </div>
-                <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
-                  <span>⚠️ 에디터 이탈</span>
-                  <span>감지됨</span>
+                <!-- Gap tooltip -->
+                <div class="timeline-tooltip font-sans text-xs">
+                  <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1">
+                    ⏳ 비활동 구간
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">⏰ 구간</span>
+                    <span class="font-bold font-mono">{{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">⏱️ 지속 시간</span>
+                    <span class="font-bold">{{ formatDuration((bucket.gapDurationMs || 0) / 1000) }}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">📦 압축된 구간</span>
+                    <span class="font-bold">{{ bucket.collapsedCount }}개</span>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              <!-- Normal bucket -->
+              <div
+                v-else
+                class="timeline-bucket"
+                :style="{
+                  background: getTimelineBucketColor(bucket),
+                  height: getTimelineBucketHeight(bucket) + '%',
+                  alignSelf: 'flex-end',
+                }"
+              >
+                <!-- Custom Interactive Hover Card Tooltip -->
+                <div class="timeline-tooltip font-sans text-xs">
+                  <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
+                    <span>구간 #{{ Number(i) + 1 }}</span>
+                    <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">⌨️ 키 입력</span>
+                    <span class="font-bold">{{ bucket.keystrokeCount }}회</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-400">⏱️ 평균 IKI</span>
+                    <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
+                  </div>
+                  <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
+                    <span>📋 붙여넣기</span>
+                    <span>{{ bucket.pasteCount }}회</span>
+                  </div>
+                  <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
+                    <span>⚠️ 에디터 이탈</span>
+                    <span>감지됨</span>
+                  </div>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
 

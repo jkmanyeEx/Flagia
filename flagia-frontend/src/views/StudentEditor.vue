@@ -172,6 +172,7 @@ function handleKeydown(e: KeyboardEvent, selection?: { cursor: number; selection
     // Capture modifier state so the replay can distinguish a shortcut
     // (e.g. Ctrl/Cmd+B) from a literal character keystroke.
     mod: e.ctrlKey || e.metaKey || e.altKey,
+    v: 2,
   })
 }
 
@@ -183,6 +184,7 @@ function handlePaste(e: ClipboardEvent, selection?: { cursor: number; selectionL
     pasteContent: text,
     cursorPosition: selection?.cursor ?? 0,
     selectionLength: selection?.selectionLength ?? 0,
+    v: 2,
   })
 }
 
