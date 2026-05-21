@@ -206,7 +206,7 @@ router.post('/', authMiddleware, teacherOnly, async (req: Request, res: Response
         res.status(404).json({ error: '학급을 찾을 수 없습니다' });
         return;
       }
-      if (classroom.teacher_id !== user.userId) {
+      if (classroom.teacher_id !== user.userId && user.role !== 'ADMIN') {
         res.status(403).json({ error: '본인 소유의 학급에만 과제를 만들 수 있습니다' });
         return;
       }
@@ -251,7 +251,7 @@ router.get('/:id/submissions', authMiddleware, teacherOnly, async (req: Request,
       res.status(404).json({ error: '과제를 찾을 수 없습니다' });
       return;
     }
-    if (owner.teacher_id !== user.userId) {
+    if (owner.teacher_id !== user.userId && user.role !== 'ADMIN') {
       res.status(403).json({ error: '본인이 만든 과제만 열람할 수 있습니다' });
       return;
     }
@@ -274,10 +274,13 @@ router.get('/:id/submissions', authMiddleware, teacherOnly, async (req: Request,
 // DELETE /api/assignments/:id
 router.delete('/:id', authMiddleware, teacherOnly, async (req: Request, res: Response) => {
   try {
-    await pool.query('DELETE FROM assignments WHERE id = ? AND teacher_id = ?', [
-      req.params.id,
-      (req as any).user.userId,
-    ]);
+    const user = (req as any).user;
+    // Admins may delete any assignment; teachers only their own.
+    if (user.role === 'ADMIN') {
+      await pool.query('DELETE FROM assignments WHERE id = ?', [req.params.id]);
+    } else {
+      await pool.query('DELETE FROM assignments WHERE id = ? AND teacher_id = ?', [req.params.id, user.userId]);
+    }
     notifyAssignmentsUpdate();
     res.json({ message: '과제가 삭제되었습니다' });
   } catch (err) {

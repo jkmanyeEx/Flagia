@@ -120,10 +120,11 @@ router.get('/:id', auth_1.authMiddleware, async (req, res) => {
             res.status(404).json({ error: '학급을 찾을 수 없습니다' });
             return;
         }
-        // Authorization & view mode:
-        //   OWNER       — the teacher/admin who created it → full management
-        //   PARTICIPANT — an enrolled member (student, or admin who joined) → can write
-        //   VIEWER      — an admin who neither owns nor joined → read-only oversight
+        // Access level (viewMode) vs. actual relationship (relation):
+        //   viewMode  OWNER       — full management. Admins get this for EVERY classroom.
+        //             PARTICIPANT — an enrolled member → can write
+        //             VIEWER      — read-only (non-admin, non-owner, non-member)
+        //   relation  OWNER / MEMBER / NONE — what the user actually is, for display.
         const [m] = await database_1.default.query('SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?', [req.params.id, user.userId]);
         const isMember = m.length > 0;
         const isOwner = (user.role === 'TEACHER' || user.role === 'ADMIN') && classroom.teacher_id === user.userId;
@@ -132,10 +133,13 @@ router.get('/:id', auth_1.authMiddleware, async (req, res) => {
             res.status(403).json({ error: '접근 권한이 없습니다' });
             return;
         }
-        const viewMode = isOwner ? 'OWNER' : (isMember ? 'PARTICIPANT' : 'VIEWER');
-        // Roster is only exposed to the owner.
+        // Admins manage everything. Their actual relationship is reported separately
+        // so the client can show a "not created/invited" marker.
+        const viewMode = (isOwner || isAdmin) ? 'OWNER' : (isMember ? 'PARTICIPANT' : 'VIEWER');
+        const relation = isOwner ? 'OWNER' : (isMember ? 'MEMBER' : 'NONE');
+        // Roster is exposed to anyone with OWNER-level access (owner or admin).
         let members = [];
-        if (isOwner) {
+        if (viewMode === 'OWNER') {
             const [mRows] = await database_1.default.query(`SELECT u.id, u.name, u.email, cm.joined_at
          FROM classroom_members cm JOIN users u ON cm.student_id = u.id
          WHERE cm.classroom_id = ? ORDER BY cm.joined_at ASC`, [req.params.id]);
@@ -157,7 +161,7 @@ router.get('/:id', auth_1.authMiddleware, async (req, res) => {
          FROM assignments a WHERE a.classroom_id = ? ORDER BY a.created_at DESC`, [req.params.id]);
             assignments = aRows;
         }
-        res.json({ classroom, members, assignments, viewMode });
+        res.json({ classroom, members, assignments, viewMode, relation });
     }
     catch (err) {
         console.error('Get classroom error:', err);
@@ -175,7 +179,7 @@ router.patch('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res)
             res.status(404).json({ error: '학급을 찾을 수 없습니다' });
             return;
         }
-        if (classroom.teacher_id !== user.userId) {
+        if (classroom.teacher_id !== user.userId && user.role !== 'ADMIN') {
             res.status(403).json({ error: '접근 권한이 없습니다' });
             return;
         }
@@ -207,7 +211,10 @@ router.patch('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res)
 router.delete('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
     try {
         const user = req.user;
-        const [result] = await database_1.default.query('DELETE FROM classrooms WHERE id = ? AND teacher_id = ?', [req.params.id, user.userId]);
+        // Admins may delete any classroom; teachers only their own.
+        const [result] = user.role === 'ADMIN'
+            ? await database_1.default.query('DELETE FROM classrooms WHERE id = ?', [req.params.id])
+            : await database_1.default.query('DELETE FROM classrooms WHERE id = ? AND teacher_id = ?', [req.params.id, user.userId]);
         if (result.affectedRows === 0) {
             res.status(404).json({ error: '학급을 찾을 수 없거나 권한이 없습니다' });
             return;

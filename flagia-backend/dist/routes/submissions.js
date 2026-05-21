@@ -351,7 +351,7 @@ router.post('/:id/grade', auth_1.authMiddleware, auth_1.teacherOnly, async (req,
             res.status(404).json({ error: '제출물을 찾을 수 없습니다' });
             return;
         }
-        if (owner.teacher_id !== user.userId) {
+        if (owner.teacher_id !== user.userId && user.role !== 'ADMIN') {
             res.status(403).json({ error: '본인이 만든 과제의 제출물만 채점할 수 있습니다' });
             return;
         }

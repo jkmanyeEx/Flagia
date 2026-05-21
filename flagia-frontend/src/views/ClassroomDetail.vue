@@ -7,7 +7,7 @@ import RichTextEditor from '../components/RichTextEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
-const { token } = useAuth()
+const { isAdmin, token } = useAuth()
 
 const loading = ref(true)
 const error = ref('')
@@ -15,14 +15,15 @@ const classroom = ref<any>(null)
 const members = ref<any[]>([])
 const assignments = ref<any[]>([])
 
-// Backend tells us how this user relates to the classroom:
-//   OWNER       — created it → full management
-//   PARTICIPANT — joined member → student-style participation (write)
-//   VIEWER      — admin oversight → read-only
+// viewMode = access level (admins get OWNER for every classroom).
+// relation = the user's actual relationship, used only for the display marker.
 const viewMode = ref<'OWNER' | 'PARTICIPANT' | 'VIEWER'>('PARTICIPANT')
+const relation = ref<'OWNER' | 'MEMBER' | 'NONE'>('NONE')
 const isOwner = computed(() => viewMode.value === 'OWNER')
 const isParticipant = computed(() => viewMode.value === 'PARTICIPANT')
 const isViewer = computed(() => viewMode.value === 'VIEWER')
+// Admin is managing a classroom they neither created nor joined.
+const adminUnaffiliated = computed(() => isAdmin.value && relation.value === 'NONE')
 const copySuccess = ref(false)
 
 // Create assignment modal (teacher)
@@ -41,6 +42,7 @@ async function load() {
     members.value = data.members || []
     assignments.value = data.assignments || []
     viewMode.value = data.viewMode || 'VIEWER'
+    relation.value = data.relation || 'NONE'
   } catch (e: any) {
     error.value = e.message || '학급 정보를 불러올 수 없습니다'
   } finally {
@@ -147,7 +149,8 @@ function statusLabel(s: string) {
               <span>👤 {{ classroom.teacher_name }}</span>
               <span v-if="isOwner">👥 학생 {{ members.length }}명</span>
               <span>📝 과제 {{ assignments.length }}개</span>
-              <span v-if="isViewer" class="badge text-xs bg-background text-text-muted">관리자 보기 전용</span>
+              <span v-if="adminUnaffiliated" class="badge text-xs bg-background text-text-muted">관리자 권한 · 미소유·미참여</span>
+              <span v-else-if="relation === 'MEMBER'" class="badge badge-amber text-xs">참여 중</span>
             </div>
           </div>
 

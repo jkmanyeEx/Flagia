@@ -81,7 +81,7 @@ async function joinClassroom() {
         <h1 class="text-2xl font-bold text-text-primary">학급</h1>
         <p class="text-sm text-text-secondary mt-1">
           {{ isAdmin
-            ? '모든 학급을 열람할 수 있습니다. 본인이 만들었거나 참여한 학급만 관리할 수 있습니다.'
+            ? '관리자 권한으로 모든 학급을 열람하고 관리할 수 있습니다. 직접 만들거나 참여하지 않은 학급은 표시로 구분됩니다.'
             : user?.role === 'TEACHER'
               ? '학급을 만들고 학생을 초대해 과제를 운영하세요.'
               : '참여 코드로 학급에 입장하고 배정된 과제를 확인하세요.' }}
@@ -128,7 +128,7 @@ async function joinClassroom() {
         <div v-if="isAdmin" class="mb-2">
           <span v-if="owns(c)" class="badge badge-green text-xs">내 학급</span>
           <span v-else-if="joined(c)" class="badge badge-amber text-xs">참여 중</span>
-          <span v-else class="badge text-xs bg-background text-text-muted">보기 전용</span>
+          <span v-else class="badge text-xs bg-background text-text-muted">미소유·미참여</span>
         </div>
 
         <p v-if="c.description" class="text-sm text-text-secondary mb-4 line-clamp-2">{{ c.description }}</p>

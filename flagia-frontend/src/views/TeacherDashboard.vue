@@ -16,6 +16,8 @@ const { user, token, isAdmin } = useAuth()
 // regardless of the param. `owns()` decides whether action controls are shown.
 const listUrl = `${API}/api/assignments?scope=all`
 function owns(a: any) { return a?.teacher_id === user.value?.id }
+// Admin was personally invited to this assignment (has a submission of their own).
+function invited(a: any) { return !!a?.my_submission_id }
 
 // State
 const assignments = ref<any[]>([])
@@ -160,8 +162,8 @@ onUnmounted(() => {
 })
 
 async function selectAssignment(a: any) {
-  // Admins may view but not open assignments they don't own.
-  if (!owns(a)) return
+  // Teachers only ever see their own; admins may open any assignment.
+  if (!owns(a) && !isAdmin.value) return
   selectedAssignment.value = a
   loadingSubs.value = true
   try {
@@ -295,7 +297,7 @@ function getGaugeOffset(score: number) {
           <h1 class="text-2xl font-bold text-text-primary">{{ isAdmin ? '전체 과제 (관리자)' : '과제 관리' }}</h1>
           <p class="text-sm text-text-secondary mt-1">
             {{ isAdmin
-              ? '모든 과제를 열람할 수 있습니다. 본인이 만든 과제만 열어 관리할 수 있습니다.'
+              ? '관리자 권한으로 모든 과제를 열람하고 관리할 수 있습니다. 직접 만들거나 참여하지 않은 과제는 표시로 구분됩니다.'
               : '학생들에게 과제를 부여하고 분석 결과를 확인하세요.' }}
           </p>
         </div>
@@ -323,12 +325,15 @@ function getGaugeOffset(score: number) {
               <td colspan="5" class="text-center py-12 text-text-muted">생성된 과제가 없습니다.</td>
             </tr>
             <tr v-else v-for="a in assignments" :key="a.id"
-                @click="owns(a) ? selectAssignment(a) : null"
-                :class="owns(a) ? 'cursor-pointer hover:bg-background' : 'cursor-default opacity-60'">
+                @click="selectAssignment(a)"
+                class="cursor-pointer hover:bg-background">
               <td>
                 <div class="font-medium text-text-primary">{{ a.title }}</div>
-                <div v-if="isAdmin && a.teacher_name" class="text-xs text-text-muted mt-0.5">
-                  👤 {{ a.teacher_name }}<span v-if="!owns(a)"> · 보기 전용</span>
+                <div v-if="isAdmin && a.teacher_name" class="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
+                  <span>👤 {{ a.teacher_name }}</span>
+                  <span v-if="owns(a)" class="badge badge-green text-[10px]">내 과제</span>
+                  <span v-else-if="invited(a)" class="badge badge-amber text-[10px]">참여 중</span>
+                  <span v-else class="badge text-[10px] bg-background text-text-muted">미소유·미참여</span>
                 </div>
               </td>
               <td>
@@ -344,8 +349,7 @@ function getGaugeOffset(score: number) {
                 </div>
               </td>
               <td class="text-right">
-                <button v-if="owns(a)" @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
-                <span v-else class="text-xs text-text-muted">—</span>
+                <button v-if="owns(a) || isAdmin" @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
               </td>
             </tr>
           </tbody>
