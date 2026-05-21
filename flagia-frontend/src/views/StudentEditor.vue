@@ -145,6 +145,9 @@ function connectWS() {
         }))
       } else if (msg.type === 'session_ready') {
         sessionId.value = msg.payload.sessionId
+        // Drain anything that buffered while (re)connecting so a brief WS drop
+        // (deploy/network) doesn't strand keystrokes.
+        flushEvents()
       } else if (msg.type === 'force_close' || msg.type === 'submit_required') {
         handleTimeExpired()
       }
@@ -268,7 +271,14 @@ async function submitEssay(forceClose = false) {
 // from writing-time analysis.
 function beaconSubmit() {
   if (submitted.value || !submission.value) return
-  const data = JSON.stringify({ finalMarkdown: content.value, timeSpentSec: Math.round(currentSpentSec()) })
+  // Include any keystroke events that haven't been flushed over the WS yet, so
+  // closing the tab mid-write doesn't lose the tail of the writing process.
+  const pending = eventBuffer.splice(0)
+  const data = JSON.stringify({
+    finalMarkdown: content.value,
+    timeSpentSec: Math.round(currentSpentSec()),
+    events: pending,
+  })
   navigator.sendBeacon(`${API}/api/submissions/${submission.value.id}/beacon`, new Blob([data], { type: 'application/json' }))
 }
 
@@ -330,8 +340,8 @@ onMounted(async () => {
     connectWS()
     startTimer()
 
-    // Periodic flush (every 5s)
-    flushInterval = setInterval(flushEvents, 5000)
+    // Periodic flush (every 2s) — frequent so a WS drop strands as little as possible
+    flushInterval = setInterval(flushEvents, 2000)
 
     // Auto-save draft + elapsed time (every 15s)
     autoSaveInterval = setInterval(saveDraft, 15000)

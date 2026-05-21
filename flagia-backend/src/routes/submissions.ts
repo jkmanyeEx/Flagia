@@ -358,7 +358,7 @@ router.get('/:id/events', authMiddleware, async (req: Request, res: Response) =>
 // WebSocket disconnects (see websocket.ts).
 router.post('/:id/beacon', async (req: Request, res: Response) => {
   try {
-    const { finalMarkdown, timeSpentSec } = req.body;
+    const { finalMarkdown, timeSpentSec, events } = req.body;
     const safeSpent = Math.max(0, Math.floor(Number(timeSpentSec) || 0));
 
     await pool.query(
@@ -369,6 +369,30 @@ router.post('/:id/beacon', async (req: Request, res: Response) => {
        WHERE s.id = ? AND s.status = 'IN_PROGRESS'`,
       [finalMarkdown || '', safeSpent, req.params.id]
     );
+
+    // Safety net for keystroke telemetry: if the WebSocket dropped (deploy,
+    // network, tunnel hiccup) before the buffer flushed, the client sends the
+    // un-flushed events here on unload. Append them to the most recent session
+    // (or create one) so the writing process isn't lost.
+    if (Array.isArray(events) && events.length > 0) {
+      const [sRows] = await pool.query(
+        'SELECT id, events_blob FROM sessions WHERE submission_id = ? ORDER BY start_time DESC LIMIT 1',
+        [req.params.id]
+      );
+      let sessionRow = (sRows as any[])[0];
+      if (!sessionRow) {
+        const newId = uuidv4();
+        await pool.query(
+          `INSERT INTO sessions (id, submission_id, start_time, events_blob) VALUES (?, ?, NOW(), '[]')`,
+          [newId, req.params.id]
+        );
+        sessionRow = { id: newId, events_blob: '[]' };
+      }
+      let existing: any[] = [];
+      if (sessionRow.events_blob) { try { existing = JSON.parse(sessionRow.events_blob); } catch { existing = []; } }
+      existing.push(...events);
+      await pool.query('UPDATE sessions SET events_blob = ? WHERE id = ?', [JSON.stringify(existing), sessionRow.id]);
+    }
 
     const [subRows] = await pool.query('SELECT assignment_id, student_id FROM submissions WHERE id = ?', [req.params.id]);
     const sub = (subRows as any[])[0];

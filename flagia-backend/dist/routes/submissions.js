@@ -286,13 +286,37 @@ router.get('/:id/events', auth_1.authMiddleware, async (req, res) => {
 // WebSocket disconnects (see websocket.ts).
 router.post('/:id/beacon', async (req, res) => {
     try {
-        const { finalMarkdown, timeSpentSec } = req.body;
+        const { finalMarkdown, timeSpentSec, events } = req.body;
         const safeSpent = Math.max(0, Math.floor(Number(timeSpentSec) || 0));
         await database_1.default.query(`UPDATE submissions s
        JOIN assignments a ON s.assignment_id = a.id
        SET s.final_markdown = ?,
            s.time_spent_sec = LEAST(a.time_limit * 60, GREATEST(s.time_spent_sec, ?))
        WHERE s.id = ? AND s.status = 'IN_PROGRESS'`, [finalMarkdown || '', safeSpent, req.params.id]);
+        // Safety net for keystroke telemetry: if the WebSocket dropped (deploy,
+        // network, tunnel hiccup) before the buffer flushed, the client sends the
+        // un-flushed events here on unload. Append them to the most recent session
+        // (or create one) so the writing process isn't lost.
+        if (Array.isArray(events) && events.length > 0) {
+            const [sRows] = await database_1.default.query('SELECT id, events_blob FROM sessions WHERE submission_id = ? ORDER BY start_time DESC LIMIT 1', [req.params.id]);
+            let sessionRow = sRows[0];
+            if (!sessionRow) {
+                const newId = (0, uuid_1.v4)();
+                await database_1.default.query(`INSERT INTO sessions (id, submission_id, start_time, events_blob) VALUES (?, ?, NOW(), '[]')`, [newId, req.params.id]);
+                sessionRow = { id: newId, events_blob: '[]' };
+            }
+            let existing = [];
+            if (sessionRow.events_blob) {
+                try {
+                    existing = JSON.parse(sessionRow.events_blob);
+                }
+                catch {
+                    existing = [];
+                }
+            }
+            existing.push(...events);
+            await database_1.default.query('UPDATE sessions SET events_blob = ? WHERE id = ?', [JSON.stringify(existing), sessionRow.id]);
+        }
         const [subRows] = await database_1.default.query('SELECT assignment_id, student_id FROM submissions WHERE id = ?', [req.params.id]);
         const sub = subRows[0];
         if (sub) {
