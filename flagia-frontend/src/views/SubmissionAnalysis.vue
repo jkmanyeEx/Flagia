@@ -120,7 +120,7 @@ function isEmptyBucket(b: TimelineBucket): boolean {
   return b.keystrokeCount === 0 && !b.isBlurred && b.pasteCount === 0
 }
 
-function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): TimelineBucket[] {
+function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, submittedAt?: string): TimelineBucket[] {
   if (!eventsList || eventsList.length === 0) return [];
 
   const timestamps = eventsList.map(e => e.timestamp).filter(t => t > 0);
@@ -129,13 +129,19 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): Time
   const minT = Math.min(...timestamps);
   const maxT = Math.max(...timestamps);
 
-  const endT = maxT + bucketSizeMs;
+  let endT = maxT + bucketSizeMs;
+  if (submittedAt) {
+    const parsedSub = new Date(submittedAt).getTime();
+    if (!isNaN(parsedSub) && parsedSub > minT) {
+      endT = Math.max(endT, parsedSub);
+    }
+  }
 
   const rawBuckets: TimelineBucket[] = [];
   let currentStart = minT;
 
   while (currentStart < endT) {
-    const currentEnd = currentStart + bucketSizeMs;
+    const currentEnd = Math.min(currentStart + bucketSizeMs, endT);
     const bucketEvents = eventsList.filter(e => e.timestamp >= currentStart && e.timestamp < currentEnd);
     
     const keystrokes = bucketEvents.filter(e => e.type === 'keydown').length;
@@ -156,55 +162,17 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000): Time
     });
 
     currentStart = currentEnd;
+    if (bucketSizeMs <= 0) break;
   }
 
-  // Collapse runs of 3+ consecutive empty buckets into a single gap marker
-  const GAP_THRESHOLD = 3;
-  const collapsed: TimelineBucket[] = [];
-  let i = 0;
-  while (i < rawBuckets.length) {
-    if (isEmptyBucket(rawBuckets[i])) {
-      let runEnd = i;
-      while (runEnd < rawBuckets.length && isEmptyBucket(rawBuckets[runEnd])) {
-        runEnd++;
-      }
-      const runLength = runEnd - i;
-      if (runLength >= GAP_THRESHOLD) {
-        // Collapse into a single gap bucket
-        const first = rawBuckets[i];
-        const last = rawBuckets[runEnd - 1];
-        collapsed.push({
-          startMs: first.startMs,
-          endMs: last.endMs,
-          keystrokeCount: 0,
-          avgIki: 0,
-          isBlurred: false,
-          pasteCount: 0,
-          isGap: true,
-          gapDurationMs: last.endMs - first.startMs,
-          collapsedCount: runLength,
-        });
-      } else {
-        // Keep short runs as-is
-        for (let j = i; j < runEnd; j++) {
-          collapsed.push(rawBuckets[j]);
-        }
-      }
-      i = runEnd;
-    } else {
-      collapsed.push(rawBuckets[i]);
-      i++;
-    }
-  }
-
-  return collapsed;
+  return rawBuckets;
 }
 
 const timeline = computed(() => {
   if (!events.value || events.value.length === 0) {
     return analysis.value?.timeline || []
   }
-  return buildTimeline(events.value, bucketSizeSec.value * 1000)
+  return buildTimeline(events.value, bucketSizeSec.value * 1000, submission.value?.submittedAt)
 })
 
 function getTimelineMaxKeystroke() {
@@ -213,18 +181,11 @@ function getTimelineMaxKeystroke() {
 }
 
 function getTimelineBucketHeight(bucket: any) {
-  if (bucket.isGap) return 15
   const max = getTimelineMaxKeystroke()
-  if (bucket.isBlurred || bucket.pasteCount > 0) {
-    return 100
-  }
   return Math.max(3, (bucket.keystrokeCount / max) * 100)
 }
 
 function getTimelineBucketColor(bucket: any) {
-  if (bucket.isGap) return 'transparent'
-  if (bucket.isBlurred) return '#FDE68A'
-  if (bucket.pasteCount > 0) return '#FCA5A5'
   if (bucket.keystrokeCount === 0) return '#E5E7EB'
   return '#818CF8'
 }
@@ -857,45 +818,32 @@ const backLabel = computed(() =>
         <div class="timeline-bar-wrapper">
           <div class="timeline-bar">
             <template v-for="(bucket, i) in timeline" :key="i">
-              <!-- Gap marker -->
+              <!-- Timeline bucket container -->
               <div
-                v-if="bucket.isGap"
-                class="timeline-gap"
-              >
-                <div class="timeline-gap-line"></div>
-                <div class="timeline-gap-label">
-                  {{ formatDuration((bucket.gapDurationMs || 0) / 1000) }} 공백
-                </div>
-                <!-- Gap tooltip -->
-                <div class="timeline-tooltip font-sans text-xs">
-                  <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1">
-                    ⏳ 비활동 구간
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-slate-400">⏰ 구간</span>
-                    <span class="font-bold font-mono">{{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-slate-400">⏱️ 지속 시간</span>
-                    <span class="font-bold">{{ formatDuration((bucket.gapDurationMs || 0) / 1000) }}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-slate-400">📦 압축된 구간</span>
-                    <span class="font-bold">{{ bucket.collapsedCount }}개</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Normal bucket -->
-              <div
-                v-else
                 class="timeline-bucket"
-                :style="{
-                  background: getTimelineBucketColor(bucket),
-                  height: getTimelineBucketHeight(bucket) + '%',
-                  alignSelf: 'flex-end',
-                }"
+                style="height: 100%; display: flex; flex-direction: column; justify-content: flex-end; position: relative;"
               >
+                <!-- Overlapping Indicator Dots at the top -->
+                <div class="timeline-indicators">
+                  <span
+                    v-if="bucket.pasteCount > 0"
+                    class="timeline-indicator-dot paste-dot"
+                  ></span>
+                  <span
+                    v-if="bucket.isBlurred"
+                    class="timeline-indicator-dot blur-dot"
+                  ></span>
+                </div>
+
+                <!-- Base typing histogram bar -->
+                <div
+                  class="timeline-typing-bar"
+                  :style="{
+                    background: getTimelineBucketColor(bucket),
+                    height: getTimelineBucketHeight(bucket) + '%',
+                  }"
+                ></div>
+
                 <!-- Custom Interactive Hover Card Tooltip -->
                 <div class="timeline-tooltip font-sans text-xs">
                   <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
@@ -929,10 +877,10 @@ const backLabel = computed(() =>
             <div class="w-3 h-3 rounded-sm" style="background: #818CF8;"></div> 타이핑
           </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-3 h-3 rounded-sm" style="background: #FDE68A;"></div> 화면 이탈
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #F59E0B;"></div> 에디터 이탈
           </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-3 h-3 rounded-sm" style="background: #FCA5A5;"></div> 붙여넣기
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #EF4444;"></div> 붙여넣기
           </div>
           <div class="flex items-center gap-1.5">
             <div class="w-3 h-3 rounded-sm" style="background: #E5E7EB;"></div> 비활동

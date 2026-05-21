@@ -95,7 +95,7 @@ router.put('/:id/submit', auth_1.authMiddleware, async (req, res) => {
         // Run Flagia analysis engine safely
         let analysis;
         try {
-            analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, submission.final_markdown || '', submission.template_text || '', submission.mode);
+            analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, submission.final_markdown || '', submission.template_text || '', submission.mode, submission.submitted_at);
             // Update submission with analysis results + cache full analysis JSON
             await database_1.default.query(`UPDATE submissions SET
           flagia_score = ?, flag_status = ?,
@@ -211,7 +211,7 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
                 catch { /* skip */ }
             }
         }
-        const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, submission.final_markdown || '', submission.template_text || '', submission.mode);
+        const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, submission.final_markdown || '', submission.template_text || '', submission.mode, submission.submitted_at);
         // Update session count in summary
         analysis.sessionSummary.sessionCount = sessions.length;
         // Cache it

@@ -350,7 +350,7 @@ function getComponentStatus(score: number): 'good' | 'warning' | 'danger' {
 /**
  * Build writing timeline — aggregate into 30-second buckets
  */
-function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000): TimelineBucket[] {
+function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000, submittedAt?: Date | string): TimelineBucket[] {
   if (events.length === 0) return [];
 
   const timestamps = events.map(e => e.timestamp).filter(t => t > 0);
@@ -359,11 +359,19 @@ function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000): Timeline
   const minTime = Math.min(...timestamps);
   const maxTime = Math.max(...timestamps);
 
+  let endT = maxTime + bucketSizeMs;
+  if (submittedAt) {
+    const parsedSub = new Date(submittedAt).getTime();
+    if (!isNaN(parsedSub) && parsedSub > minTime) {
+      endT = Math.max(endT, parsedSub);
+    }
+  }
+
   const buckets: TimelineBucket[] = [];
   let currentStart = minTime;
 
-  while (currentStart < maxTime + bucketSizeMs) {
-    const currentEnd = currentStart + bucketSizeMs;
+  while (currentStart < endT) {
+    const currentEnd = Math.min(currentStart + bucketSizeMs, endT);
     const bucketEvents = events.filter(e => e.timestamp >= currentStart && e.timestamp < currentEnd);
     
     const keystrokes = bucketEvents.filter(e => e.type === 'keydown').length;
@@ -384,6 +392,7 @@ function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000): Timeline
     });
 
     currentStart = currentEnd;
+    if (bucketSizeMs <= 0) break;
   }
 
   return buckets;
@@ -459,7 +468,8 @@ export function runFlagiaAnalysis(
   rawEvents: TelemetryEvent[],
   finalMarkdown: string,
   templateText: string,
-  mode: string
+  mode: string,
+  submittedAt?: Date | string
 ): AnalysisResult {
   const weights = MODE_WEIGHTS[mode] || MODE_WEIGHTS.STANDARD;
   const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
@@ -645,7 +655,7 @@ export function runFlagiaAnalysis(
   // Build over real activity only; the server-injected leave/reconnect markers
   // would otherwise shift the bucket bounds by any client/server clock offset.
   const activityEvents = events.filter(e => e.type !== 'leave' && e.type !== 'reconnect');
-  const timeline = buildTimeline(activityEvents);
+  const timeline = buildTimeline(activityEvents, 30000, submittedAt);
   const blurIntervals = buildBlurIntervals(activityEvents);
 
   // ── Session Summary ──

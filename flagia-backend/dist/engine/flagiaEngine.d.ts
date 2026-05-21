@@ -75,6 +75,6 @@ interface AnalysisResult {
 /**
  * Main analysis function
  */
-export declare function runFlagiaAnalysis(rawEvents: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string): AnalysisResult;
+export declare function runFlagiaAnalysis(rawEvents: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string, submittedAt?: Date | string): AnalysisResult;
 export {};
 //# sourceMappingURL=flagiaEngine.d.ts.map

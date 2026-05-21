@@ -128,7 +128,8 @@ router.put('/:id/submit', authMiddleware, async (req: Request, res: Response) =>
         allEvents,
         submission.final_markdown || '',
         submission.template_text || '',
-        submission.mode
+        submission.mode,
+        submission.submitted_at
       );
 
       // Update submission with analysis results + cache full analysis JSON
@@ -266,7 +267,8 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
       allEvents,
       submission.final_markdown || '',
       submission.template_text || '',
-      submission.mode
+      submission.mode,
+      submission.submitted_at
     );
 
     // Update session count in summary

@@ -316,7 +316,7 @@ function getComponentStatus(score) {
 /**
  * Build writing timeline — aggregate into 30-second buckets
  */
-function buildTimeline(events, bucketSizeMs = 30000) {
+function buildTimeline(events, bucketSizeMs = 30000, submittedAt) {
     if (events.length === 0)
         return [];
     const timestamps = events.map(e => e.timestamp).filter(t => t > 0);
@@ -324,10 +324,17 @@ function buildTimeline(events, bucketSizeMs = 30000) {
         return [];
     const minTime = Math.min(...timestamps);
     const maxTime = Math.max(...timestamps);
+    let endT = maxTime + bucketSizeMs;
+    if (submittedAt) {
+        const parsedSub = new Date(submittedAt).getTime();
+        if (!isNaN(parsedSub) && parsedSub > minTime) {
+            endT = Math.max(endT, parsedSub);
+        }
+    }
     const buckets = [];
     let currentStart = minTime;
-    while (currentStart < maxTime + bucketSizeMs) {
-        const currentEnd = currentStart + bucketSizeMs;
+    while (currentStart < endT) {
+        const currentEnd = Math.min(currentStart + bucketSizeMs, endT);
         const bucketEvents = events.filter(e => e.timestamp >= currentStart && e.timestamp < currentEnd);
         const keystrokes = bucketEvents.filter(e => e.type === 'keydown').length;
         const ikiValues = bucketEvents
@@ -345,6 +352,8 @@ function buildTimeline(events, bucketSizeMs = 30000) {
             pasteCount,
         });
         currentStart = currentEnd;
+        if (bucketSizeMs <= 0)
+            break;
     }
     return buckets;
 }
@@ -411,7 +420,7 @@ function generateVerdict(flagiaScore, flagStatus, scores, mode) {
 /**
  * Main analysis function
  */
-function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode) {
+function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submittedAt) {
     const weights = MODE_WEIGHTS[mode] || MODE_WEIGHTS.STANDARD;
     const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
     const events = stripSubmitInducedBlur(rawEvents);
@@ -582,7 +591,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode) {
     // Build over real activity only; the server-injected leave/reconnect markers
     // would otherwise shift the bucket bounds by any client/server clock offset.
     const activityEvents = events.filter(e => e.type !== 'leave' && e.type !== 'reconnect');
-    const timeline = buildTimeline(activityEvents);
+    const timeline = buildTimeline(activityEvents, 30000, submittedAt);
     const blurIntervals = buildBlurIntervals(activityEvents);
     // ── Session Summary ──
     const avgWPM = totalDurationSec > 0
