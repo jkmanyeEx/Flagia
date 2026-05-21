@@ -328,7 +328,7 @@ function buildTimeline(events, bucketSizeMs = 30000, submittedAt) {
     if (submittedAt) {
         const parsedSub = new Date(submittedAt).getTime();
         if (!isNaN(parsedSub) && parsedSub > minTime) {
-            endT = Math.max(endT, parsedSub);
+            endT = parsedSub;
         }
     }
     const buckets = [];
@@ -607,6 +607,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     // ── Verdict ──
     const { verdict, verdictDetail } = generateVerdict(flagiaScore, flagStatus, { cv: cvScore, rr: rrScore, paste: pasteScore, blur: blurScore, time: timeScore }, mode);
     return {
+        version: 3,
         flagiaScore,
         flagStatus,
         coefficientOfVariation: Math.round(cv * 1000000) / 1000000,

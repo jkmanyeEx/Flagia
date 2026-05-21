@@ -9,7 +9,7 @@ async function regrade() {
   console.log('🔄 Fetching submitted submissions...');
 
   const [rows] = await pool.query(
-    `SELECT s.id, s.final_markdown, s.status, a.template_text, a.mode, a.text_limit
+    `SELECT s.id, s.final_markdown, s.status, s.submitted_at, a.template_text, a.mode, a.text_limit
      FROM submissions s
      JOIN assignments a ON s.assignment_id = a.id
      WHERE s.status IN ('SUBMITTED', 'FORCE_CLOSED')`
@@ -43,7 +43,8 @@ async function regrade() {
         allEvents,
         sub.final_markdown || '',
         sub.template_text || '',
-        sub.mode
+        sub.mode,
+        sub.submitted_at
       );
 
       // Update DB

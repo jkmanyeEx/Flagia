@@ -168,31 +168,33 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
             res.status(403).json({ error: '접근 권한이 없습니다' });
             return;
         }
-        // If cached analysis exists, return it
+        // If cached analysis exists and is up to date (version 3), return it
         if (submission.analysis_json) {
             try {
                 const cached = JSON.parse(submission.analysis_json);
-                res.json({
-                    submission: {
-                        id: submission.id,
-                        assignmentId: submission.assignment_id,
-                        assignmentTitle: submission.assignment_title,
-                        templateText: submission.template_text,
-                        studentName: submission.student_name,
-                        studentEmail: submission.student_email,
-                        status: submission.status,
-                        submittedAt: submission.submitted_at,
-                        finalMarkdown: submission.final_markdown,
-                        mode: submission.mode,
-                        textLimit: submission.text_limit,
-                        timeLimit: submission.time_limit,
-                        score: submission.score,
-                        feedback: submission.feedback,
-                        maxScore: submission.max_score,
-                    },
-                    analysis: cached,
-                });
-                return;
+                if (cached && cached.version === 3) {
+                    res.json({
+                        submission: {
+                            id: submission.id,
+                            assignmentId: submission.assignment_id,
+                            assignmentTitle: submission.assignment_title,
+                            templateText: submission.template_text,
+                            studentName: submission.student_name,
+                            studentEmail: submission.student_email,
+                            status: submission.status,
+                            submittedAt: submission.submitted_at,
+                            finalMarkdown: submission.final_markdown,
+                            mode: submission.mode,
+                            textLimit: submission.text_limit,
+                            timeLimit: submission.time_limit,
+                            score: submission.score,
+                            feedback: submission.feedback,
+                            maxScore: submission.max_score,
+                        },
+                        analysis: cached,
+                    });
+                    return;
+                }
             }
             catch { /* recompute */ }
         }

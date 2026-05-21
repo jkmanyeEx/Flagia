@@ -566,8 +566,8 @@ select.input {
 .timeline-bar-wrapper {
   overflow-x: auto;
   overflow-y: hidden;
-  padding-top: 140px;
-  margin-top: -120px;
+  padding-top: 200px;
+  margin-top: -200px;
   pointer-events: none;
 }
 .timeline-bar-wrapper::-webkit-scrollbar {
@@ -617,6 +617,7 @@ select.input {
   pointer-events: none;
 }
 .timeline-indicator-dot {
+  display: block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -660,6 +661,24 @@ select.input {
   border-width: 6px;
   border-style: solid;
   border-color: rgba(15, 23, 42, 0.95) transparent transparent transparent;
+}
+.timeline-tooltip.align-left {
+  left: 0;
+  transform: none;
+}
+.timeline-tooltip.align-left::after {
+  left: 8px;
+  transform: none;
+}
+.timeline-tooltip.align-right {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.timeline-tooltip.align-right::after {
+  left: auto;
+  right: 8px;
+  transform: none;
 }
 
 /* ── Modal ── */

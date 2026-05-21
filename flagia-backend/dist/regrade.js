@@ -11,7 +11,7 @@ const database_1 = __importDefault(require("./database"));
 const flagiaEngine_1 = require("./engine/flagiaEngine");
 async function regrade() {
     console.log('🔄 Fetching submitted submissions...');
-    const [rows] = await database_1.default.query(`SELECT s.id, s.final_markdown, s.status, a.template_text, a.mode, a.text_limit
+    const [rows] = await database_1.default.query(`SELECT s.id, s.final_markdown, s.status, s.submitted_at, a.template_text, a.mode, a.text_limit
      FROM submissions s
      JOIN assignments a ON s.assignment_id = a.id
      WHERE s.status IN ('SUBMITTED', 'FORCE_CLOSED')`);
@@ -35,7 +35,7 @@ async function regrade() {
                 }
             }
             // Run updated analysis
-            const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, sub.final_markdown || '', sub.template_text || '', sub.mode);
+            const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, sub.final_markdown || '', sub.template_text || '', sub.mode, sub.submitted_at);
             // Update DB
             await database_1.default.query(`UPDATE submissions SET
            flagia_score = ?, flag_status = ?,

@@ -53,6 +53,7 @@ interface SessionSummary {
     averageWPM: number;
 }
 interface AnalysisResult {
+    version?: number;
     flagiaScore: number;
     flagStatus: 'GREEN' | 'AMBER' | 'RED';
     coefficientOfVariation: number;

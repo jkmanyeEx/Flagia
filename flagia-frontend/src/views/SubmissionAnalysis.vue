@@ -133,7 +133,7 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, submi
   if (submittedAt) {
     const parsedSub = new Date(submittedAt).getTime();
     if (!isNaN(parsedSub) && parsedSub > minT) {
-      endT = Math.max(endT, parsedSub);
+      endT = parsedSub;
     }
   }
 
@@ -845,7 +845,13 @@ const backLabel = computed(() =>
                 ></div>
 
                 <!-- Custom Interactive Hover Card Tooltip -->
-                <div class="timeline-tooltip font-sans text-xs">
+                <div
+                  class="timeline-tooltip font-sans text-xs"
+                  :class="{
+                    'align-left': Number(i) < 8,
+                    'align-right': Number(i) >= timeline.length - 8
+                  }"
+                >
                   <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
                     <span>구간 #{{ Number(i) + 1 }}</span>
                     <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>

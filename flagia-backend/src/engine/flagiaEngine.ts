@@ -61,6 +61,7 @@ interface SessionSummary {
 }
 
 interface AnalysisResult {
+  version?: number;
   flagiaScore: number;
   flagStatus: 'GREEN' | 'AMBER' | 'RED';
   coefficientOfVariation: number;
@@ -363,7 +364,7 @@ function buildTimeline(events: TelemetryEvent[], bucketSizeMs = 30000, submitted
   if (submittedAt) {
     const parsedSub = new Date(submittedAt).getTime();
     if (!isNaN(parsedSub) && parsedSub > minTime) {
-      endT = Math.max(endT, parsedSub);
+      endT = parsedSub;
     }
   }
 
@@ -680,6 +681,7 @@ export function runFlagiaAnalysis(
   );
 
   return {
+    version: 3,
     flagiaScore,
     flagStatus,
     coefficientOfVariation: Math.round(cv * 1000000) / 1000000,
