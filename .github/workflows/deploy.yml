@@ -1,28 +1,31 @@
 name: Remote Deploy Workflow
 
-# 1. Strict Trigger Filter: Only run when a push hits the 'main' branch
 on:
   push:
     branches:
-      - main  # Change to 'master' if your default branch uses the old naming
+      - main
 
 jobs:
   deploy:
     runs-on: self-hosted
     steps:
+      # This completely replaces 'rm -rf' and 'gh repo clone' safely and instantly
       - name: Checkout fresh code
         uses: actions/checkout@v4
 
       - name: Execute local deployment commands
         run: |
           echo "New code pushed to main. Deploying changes..."
-          cd ~/server
-          rm -rf Flagia
-          gh repo clone jkmanyeEx/Flagia
+          
+          # 1. Navigate directly to the step's checked-out frontend folder
           cd flagia-frontend
           npm install
           npm run build
+          
+          # 2. Navigate directly to the backend folder
           cd ../flagia-backend
           npm install
           npm run build
+          
+          # 3. Restart PM2 process manager
           pm2 restart all
