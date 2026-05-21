@@ -9,31 +9,41 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      # Replaces 'rm -rf' + 'gh repo clone' safely and instantly.
       - name: Checkout fresh code
         uses: actions/checkout@v4
 
-      - name: Build frontend & backend
+      - name: Build (in runner workspace)
         run: |
-          echo "New code pushed to main. Building..."
-
-          # 1. Frontend
+          echo "Building frontend & backend..."
           cd flagia-frontend
-          npm ci --verbose  # --verbose forces npm to output every line of download work
+          npm ci --verbose
           npm install
           npm run build
-
-          # 2. Backend
           cd ../flagia-backend
           npm ci --verbose
           npm install
           npm run build
 
-      # Apply idempotent SQL migrations against the local prod DB. The runner is
-      # on the same host as MySQL (the app connects to 127.0.0.1), so the mysql
-      # client can reach it here. Safe to run on every deploy. Best-effort:
-      # continue-on-error + graceful skips mean a migration hiccup never blocks
-      # the restart — the backend also runs the same steps at boot (ensureSchema).
+      - name: Publish build to the live app directory
+        # IMPORTANT: pm2 runs the app from $HOME/server/Flagia, NOT from this
+        # runner's workspace ($GITHUB_WORKSPACE). Previously the workflow built
+        # here and ran `pm2 restart all` without copying the result over, so pm2
+        # kept restarting STALE code (old bundle + old backend). Sync the freshly
+        # built app into the live directory. Overlay copy (no delete) so any
+        # runtime-only files already in the live dir are preserved.
+        run: |
+          set -e
+          APP="$HOME/server/Flagia"
+          mkdir -p "$APP/flagia-backend" "$APP/flagia-frontend"
+          if command -v rsync >/dev/null 2>&1; then
+            rsync -a "$GITHUB_WORKSPACE/flagia-backend/"  "$APP/flagia-backend/"
+            rsync -a "$GITHUB_WORKSPACE/flagia-frontend/" "$APP/flagia-frontend/"
+          else
+            cp -a "$GITHUB_WORKSPACE/flagia-backend/."  "$APP/flagia-backend/"
+            cp -a "$GITHUB_WORKSPACE/flagia-frontend/." "$APP/flagia-frontend/"
+          fi
+          echo "Published build to $APP"
+
       - name: Apply database migrations
         continue-on-error: true
         env:
@@ -43,15 +53,15 @@ jobs:
           DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
         run: |
           if ! command -v mysql >/dev/null 2>&1; then
-            echo "mysql client not found on runner; skipping (backend boot ensureSchema will migrate)."
+            echo "mysql client not found; backend boot ensureSchema will migrate."
             exit 0
           fi
           if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
-            echo "DB migration secrets not set; skipping (backend boot ensureSchema will migrate)."
+            echo "DB migration secrets not set; backend boot ensureSchema will migrate."
             exit 0
           fi
           shopt -s nullglob
-          for f in flagia-backend/migrations/*.sql; do
+          for f in "$HOME/server/Flagia/flagia-backend/migrations/"*.sql; do
             echo "Applying migration: $f"
             mysql --host="$DB_HOST" --user="$DB_USER" --password="$DB_PASS" "$DB_NAME" < "$f"
           done
