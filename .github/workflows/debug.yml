@@ -106,6 +106,12 @@ jobs:
               $MYSQL -e "SELECT se.submission_id, se.id AS session_id, se.start_time, se.end_time, JSON_LENGTH(se.events_blob) AS events, LENGTH(se.events_blob) AS bytes FROM sessions se JOIN (SELECT id FROM submissions ORDER BY created_at DESC LIMIT 5) r ON r.id = se.submission_id ORDER BY se.start_time DESC;" || true
               echo "--- first 600 chars of the most-recent session's events_blob ---"
               $MYSQL -N -e "SELECT SUBSTRING(events_blob,1,600) FROM sessions ORDER BY start_time DESC LIMIT 1;" || true
+              echo "--- recent assignments (classroom_id NULL = standalone/join-code) ---"
+              $MYSQL -e "SELECT id, LEFT(title,24) AS title, classroom_id, join_code, created_at FROM assignments ORDER BY created_at DESC LIMIT 8;" || true
+              echo "--- classroom membership counts ---"
+              $MYSQL -e "SELECT c.id, LEFT(c.name,20) AS name, (SELECT COUNT(*) FROM classroom_members m WHERE m.classroom_id=c.id) AS members, (SELECT COUNT(*) FROM assignments a WHERE a.classroom_id=c.id) AS assignments FROM classrooms c ORDER BY c.created_at DESC LIMIT 8;" || true
+              echo "--- students (most recent) ---"
+              $MYSQL -e "SELECT id, LEFT(email,28) AS email, created_at FROM users WHERE role='STUDENT' ORDER BY created_at DESC LIMIT 8;" || true
             fi
           fi
 
