@@ -234,6 +234,43 @@ router.get('/:id/submissions', auth_1.authMiddleware, auth_1.teacherOnly, async 
         res.status(500).json({ error: '제출물 목록을 불러올 수 없습니다' });
     }
 });
+// PATCH /api/assignments/:id — update editable fields (currently the guideline
+// template). Owner teacher or admin only.
+router.patch('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
+    try {
+        const user = req.user;
+        const [rows] = await database_1.default.query('SELECT teacher_id FROM assignments WHERE id = ?', [req.params.id]);
+        const assignment = rows[0];
+        if (!assignment) {
+            res.status(404).json({ error: '과제를 찾을 수 없습니다' });
+            return;
+        }
+        if (assignment.teacher_id !== user.userId && user.role !== 'ADMIN') {
+            res.status(403).json({ error: '본인이 만든 과제만 수정할 수 있습니다' });
+            return;
+        }
+        const { templateText } = req.body;
+        const fields = [];
+        const params = [];
+        if (templateText !== undefined) {
+            fields.push('template_text = ?');
+            params.push(templateText || '');
+        }
+        if (fields.length === 0) {
+            res.status(400).json({ error: '변경할 항목이 없습니다' });
+            return;
+        }
+        params.push(req.params.id);
+        await database_1.default.query(`UPDATE assignments SET ${fields.join(', ')} WHERE id = ?`, params);
+        const [updated] = await database_1.default.query(`SELECT a.*, u.name as teacher_name FROM assignments a JOIN users u ON a.teacher_id = u.id WHERE a.id = ?`, [req.params.id]);
+        (0, websocket_1.notifyAssignmentsUpdate)();
+        res.json(updated[0]);
+    }
+    catch (err) {
+        console.error('Update assignment error:', err);
+        res.status(500).json({ error: '과제를 수정할 수 없습니다' });
+    }
+});
 // DELETE /api/assignments/:id
 router.delete('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res) => {
     try {

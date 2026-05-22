@@ -44,6 +44,46 @@ const form = ref({
 const creating = ref(false)
 const copySuccess = ref(false)
 
+// Template view/edit
+const showTemplateModal = ref(false)
+const templateDraft = ref('')
+const savingTemplate = ref(false)
+// Owner teachers and admins may edit; everyone else views read-only.
+const canEditSelected = computed(() =>
+  !!selectedAssignment.value && (owns(selectedAssignment.value) || isAdmin.value)
+)
+
+function openTemplate() {
+  templateDraft.value = selectedAssignment.value?.template_text || ''
+  showTemplateModal.value = true
+}
+
+async function saveTemplate() {
+  if (!selectedAssignment.value) return
+  savingTemplate.value = true
+  try {
+    const res = await fetch(`${API}/api/assignments/${selectedAssignment.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
+      body: JSON.stringify({ templateText: templateDraft.value }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      selectedAssignment.value.template_text = updated.template_text
+      const idx = assignments.value.findIndex(a => a.id === updated.id)
+      if (idx >= 0) assignments.value[idx].template_text = updated.template_text
+      showTemplateModal.value = false
+    } else {
+      const e = await res.json().catch(() => ({}))
+      alert(e.error || '템플릿 저장에 실패했습니다')
+    }
+  } catch {
+    alert('템플릿 저장 중 오류가 발생했습니다')
+  } finally {
+    savingTemplate.value = false
+  }
+}
+
 // Stats
 const totalSubmissions = computed(() => submissions.value.length)
 const submittedCount = computed(() =>
@@ -416,9 +456,14 @@ function getGaugeOffset(score: number) {
             <span class="badge badge-green py-0.5">{{ getModeLabel(selectedAssignment.mode) }}</span>
           </div>
         </div>
-        <button v-if="submissions.length > 0" @click="exportCSV" class="btn btn-outline">
-          📊 CSV 내보내기
-        </button>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button @click="openTemplate" class="btn btn-outline">
+            📄 템플릿 {{ canEditSelected ? '보기 / 편집' : '보기' }}
+          </button>
+          <button v-if="submissions.length > 0" @click="exportCSV" class="btn btn-outline">
+            📊 CSV 내보내기
+          </button>
+        </div>
       </div>
 
       <!-- Submissions Table -->
@@ -526,6 +571,45 @@ function getGaugeOffset(score: number) {
         <h4 class="text-sm font-semibold mb-2">제출 내용</h4>
         <div class="border border-border rounded-lg p-6 max-h-[50vh] overflow-y-auto bg-white shadow-inner">
           <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || '(내용 없음)'"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Template View / Edit Modal -->
+    <div v-if="showTemplateModal && selectedAssignment" class="modal-overlay" @click.self="showTemplateModal = false">
+      <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
+        <div class="flex items-start justify-between mb-4 flex-shrink-0">
+          <div>
+            <h3 class="text-xl font-bold">과제 템플릿</h3>
+            <p class="text-xs text-text-muted mt-0.5">{{ selectedAssignment.title }} · 학생에게 기본 제공되는 가이드라인 텍스트</p>
+          </div>
+          <button @click="showTemplateModal = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
+
+        <!-- Editable (owner / admin) -->
+        <div v-if="canEditSelected" class="flex flex-col flex-1">
+          <div class="relative" style="height: 360px;">
+            <RichTextEditor v-model="templateDraft" placeholder="여기에 템플릿 내용을 작성하세요..." />
+          </div>
+          <p class="text-xs text-text-muted mt-2">
+            ⚠️ 템플릿 변경은 이후 새로 시작하는 학생에게 적용됩니다. 이미 작성 중이거나 제출한 학생에게는 영향을 주지 않습니다.
+          </p>
+          <div class="flex justify-end gap-3 pt-4 mt-2 border-t border-border">
+            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">닫기</button>
+            <button type="button" @click="saveTemplate" class="btn btn-primary" :disabled="savingTemplate">
+              {{ savingTemplate ? '저장 중...' : '템플릿 저장' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Read-only view -->
+        <div v-else class="flex flex-col flex-1">
+          <div class="border border-border rounded-lg p-6 max-h-[60vh] overflow-y-auto bg-white shadow-inner">
+            <div class="markdown-body ProseMirror" v-html="selectedAssignment.template_text || '(템플릿 없음)'"></div>
+          </div>
+          <div class="flex justify-end pt-4 mt-2 border-t border-border">
+            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">닫기</button>
+          </div>
         </div>
       </div>
     </div>
