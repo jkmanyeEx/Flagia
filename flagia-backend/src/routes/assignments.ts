@@ -46,8 +46,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       `;
       params = [user.userId];
     } else {
-      // Students see: standalone assignments they directly joined (have a
-      // submission for), plus every assignment in a classroom they belong to.
+      // Students see: any assignment they've joined (have a submission for —
+      // standalone OR classroom, joined via its code), plus every assignment in
+      // a classroom they belong to (even before starting).
       query = `
         SELECT a.*,
           u.name as teacher_name,
@@ -58,7 +59,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
         JOIN users u ON a.teacher_id = u.id
         LEFT JOIN classrooms c ON a.classroom_id = c.id
         LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = ?
-        WHERE (a.classroom_id IS NULL AND sub.id IS NOT NULL)
+        WHERE sub.id IS NOT NULL
            OR a.classroom_id IN (
              SELECT classroom_id FROM classroom_members WHERE student_id = ?
            )
