@@ -25,6 +25,7 @@ const wsConnected = ref(false)
 const submitting = ref(false)
 
 const showSubmitModal = ref(false)
+const showTemplateView = ref(false)
 const bypassLeaveGuard = ref(false)
 
 // Timer
@@ -445,6 +446,11 @@ async function confirmSubmit() {
           {{ timerDisplay }}
         </div>
 
+        <!-- View the original guideline template -->
+        <button @click="showTemplateView = true" class="btn btn-ghost btn-sm">
+          📄 템플릿 보기
+        </button>
+
         <!-- Save & return to list (resume later) -->
         <button @click="saveAndExit" class="btn btn-outline btn-sm" :disabled="submitting">
           저장하고 과제 목록으로
@@ -483,6 +489,25 @@ async function confirmSubmit() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Template View Modal (read-only original guideline) -->
+    <div v-if="showTemplateView" class="modal-overlay" @click.self="showTemplateView = false">
+      <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
+        <div class="flex items-start justify-between mb-4 flex-shrink-0">
+          <div>
+            <h3 class="text-xl font-bold">과제 템플릿</h3>
+            <p class="text-xs text-text-muted mt-0.5">선생님이 제공한 원본 가이드라인입니다. (읽기 전용)</p>
+          </div>
+          <button @click="showTemplateView = false" class="btn btn-ghost btn-xs">✕</button>
+        </div>
+        <div class="border border-border rounded-lg p-6 max-h-[65vh] overflow-y-auto bg-white shadow-inner flex-1">
+          <div class="markdown-body ProseMirror" v-html="assignment?.template_text || '<p>(템플릿이 없습니다)</p>'"></div>
+        </div>
+        <div class="flex justify-end pt-4 mt-2 border-t border-border">
+          <button @click="showTemplateView = false" class="btn btn-primary">닫기</button>
         </div>
       </div>
     </div>
