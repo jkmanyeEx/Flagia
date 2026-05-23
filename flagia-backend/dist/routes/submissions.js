@@ -168,11 +168,17 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
             res.status(403).json({ error: '접근 권한이 없습니다' });
             return;
         }
-        // Students never receive the detailed analysis (component scores, metrics,
-        // weights, verdict). Exposing the rubric — even via the network tab — would
-        // let them reverse-engineer and game the engine. They only get their content
-        // + grade/feedback. Staff (teacher/admin) get the full breakdown.
+        // Students get only the final score + session summary — NOT the rubric
+        // (component scores, weights, Cv/RR, verdict, timeline, score adjustments).
+        // Exposing those — even via the network tab — would let them reverse-engineer
+        // and game the engine. Staff (teacher/admin) get the full breakdown.
         const isStudent = user.role === 'STUDENT';
+        const trimForStudent = (a) => (a ? {
+            version: a.version,
+            flagiaScore: a.flagiaScore,
+            flagStatus: a.flagStatus,
+            sessionSummary: a.sessionSummary,
+        } : null);
         // If cached analysis exists and is up to date (version 3), return it
         if (submission.analysis_json) {
             try {
@@ -196,7 +202,7 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
                             feedback: submission.feedback,
                             maxScore: submission.max_score,
                         },
-                        analysis: isStudent ? null : cached,
+                        analysis: isStudent ? trimForStudent(cached) : cached,
                     });
                     return;
                 }
@@ -241,7 +247,7 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
                 feedback: submission.feedback,
                 maxScore: submission.max_score,
             },
-            analysis: isStudent ? null : analysis,
+            analysis: isStudent ? trimForStudent(analysis) : analysis,
         });
     }
     catch (err) {

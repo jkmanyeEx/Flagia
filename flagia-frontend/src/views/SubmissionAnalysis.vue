@@ -570,9 +570,7 @@ function miniOffset(score: number) {
 }
 
 // Active Tab & Custom Tooltips
-// Students never see the detailed report/replay (it would reveal the rubric),
-// so they land directly on the content/grade tab.
-const activeTab = ref<'report' | 'replay' | 'content'>(isStaff.value ? 'report' : 'content')
+const activeTab = ref<'report' | 'replay' | 'content'>('report')
 
 // Grading states
 const score = ref<number | null>(null)
@@ -669,11 +667,10 @@ const backLabel = computed(() =>
 
     <!-- Tab Navigation -->
     <div class="flex items-center border-b border-border mb-6">
-      <!-- Detailed analysis (component scores, metrics, verdict) is staff-only:
-           exposing the rubric to students would let them reverse-engineer and
-           game the engine. -->
+      <!-- Report tab: students see the final score + session summary only;
+           the detailed rubric (components, metrics, verdict, timeline) is gated
+           to staff inside the tab so students can't reverse-engineer the engine. -->
       <button
-        v-if="isStaff"
         @click="activeTab = 'report'"
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'report' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
@@ -697,8 +694,8 @@ const backLabel = computed(() =>
       </button>
     </div>
 
-    <!-- TAB 1: Analysis Report (staff only) -->
-    <div v-if="activeTab === 'report' && isStaff" class="space-y-6">
+    <!-- TAB 1: Analysis Report -->
+    <div v-if="activeTab === 'report'" class="space-y-6">
       <!-- Hero Section: Score + Verdict -->
       <div v-if="analysis" class="card p-8">
         <div class="flex items-start gap-8">
@@ -746,8 +743,8 @@ const backLabel = computed(() =>
               <span v-if="submission.submittedAt">📅 {{ formatDate(submission.submittedAt) }}</span>
             </div>
 
-            <!-- Verdict -->
-            <div class="p-4 rounded-lg" :class="flagBg(analysis.flagStatus || '')">
+            <!-- Verdict (staff only — the detail names which signals fired) -->
+            <div v-if="isStaff" class="p-4 rounded-lg" :class="flagBg(analysis.flagStatus || '')">
               <p class="text-sm font-semibold mb-1" :style="{ color: flagColor(analysis.flagStatus || '') }">
                 {{ analysis.verdict }}
               </p>
@@ -760,7 +757,7 @@ const backLabel = computed(() =>
       </div>
 
       <!-- 4 Metric Cards -->
-      <div v-if="analysis?.components" class="grid grid-cols-2 gap-4">
+      <div v-if="isStaff && analysis?.components" class="grid grid-cols-2 gap-4">
         <div
           v-for="(comp, key) in analysis.components"
           :key="key"
@@ -804,7 +801,7 @@ const backLabel = computed(() =>
 
       <!-- Score reconciliation: shown when a structural penalty was applied so
            the gauge no longer equals the simple sum of the component cards. -->
-      <div v-if="analysis && analysis.scoreAdjustments && analysis.scoreAdjustments.length > 0" class="card p-6">
+      <div v-if="isStaff && analysis && analysis.scoreAdjustments && analysis.scoreAdjustments.length > 0" class="card p-6">
         <h2 class="text-sm font-semibold text-text-primary mb-3">최종 점수 산출 내역</h2>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between items-center">
@@ -827,8 +824,8 @@ const backLabel = computed(() =>
         </p>
       </div>
 
-      <!-- Writing Timeline with custom hover tooltips -->
-      <div v-if="timeline && timeline.length > 0" class="card p-6">
+      <!-- Writing Timeline with custom hover tooltips (staff only) -->
+      <div v-if="isStaff && timeline && timeline.length > 0" class="card p-6">
         <div class="flex items-center justify-between mb-4 border-b border-border pb-3">
           <div>
             <h2 class="text-sm font-semibold text-text-primary mb-1">글쓰기 타임라인 (상호작용 뷰)</h2>
@@ -964,8 +961,8 @@ const backLabel = computed(() =>
         </div>
       </div>
 
-      <!-- Raw Metrics -->
-      <div class="card p-6">
+      <!-- Raw Metrics (staff only — Cv/RR reveal the rubric) -->
+      <div v-if="isStaff" class="card p-6">
         <h2 class="text-sm font-semibold text-text-primary mb-4">원시 측정값</h2>
         <div v-if="analysis" class="grid grid-cols-3 gap-4 text-sm">
           <div class="p-3 bg-background rounded-lg">
@@ -1287,14 +1284,6 @@ const backLabel = computed(() =>
           </div>
         </div>
 
-        <!-- Student: simple, non-revealing process note (no metrics/rubric) -->
-        <div v-if="!isStaff" class="card p-6">
-          <h2 class="text-sm font-semibold text-text-primary mb-3">✍️ 작성 과정 기록</h2>
-          <p class="text-xs text-text-secondary leading-relaxed">
-            제출이 정상적으로 완료되었으며, 작성 과정(타이핑 기록)이 안전하게 저장되었습니다.
-            상세 분석 결과는 담당 선생님만 확인할 수 있습니다.
-          </p>
-        </div>
       </div>
     </div>
   </div>
