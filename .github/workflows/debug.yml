@@ -90,6 +90,8 @@ jobs:
               $MYSQL -e "SHOW COLUMNS FROM assignments LIKE 'continuable';" || true
               echo "--- owner account role ---"
               $MYSQL -e "SELECT name, email, role FROM users WHERE email='devmeko463@gmail.com';" || true
+              echo "--- accounts named 한지로 + all current admins ---"
+              $MYSQL -e "SELECT id, name, email, role, created_at FROM users WHERE name LIKE '%한지로%' OR role='ADMIN' ORDER BY created_at;" || true
               echo "--- remote-access DB users (host=127.0.0.1) ---"
               $MYSQL -e "SELECT user, host, plugin FROM mysql.user WHERE host='127.0.0.1';" || true
             fi
