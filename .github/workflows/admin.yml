@@ -1,0 +1,104 @@
+name: Admin Actions
+
+# Manually-triggered admin operations on the prod box (self-hosted runner).
+# Use this when there's no SSH access:
+#   GitHub → Actions → "Admin Actions" → Run workflow → fill inputs.
+#
+# delete-user:
+#   - Always prints the matching account(s) first (name/email/role/counts).
+#   - Only deletes when `confirm` is exactly "DELETE" AND the query matches
+#     exactly one account. Deleting a user cascades (ON DELETE CASCADE) to their
+#     classrooms, assignments, submissions, sessions, and memberships — i.e. the
+#     account is removed totally.
+#   - If the query matches multiple accounts, it refuses to delete and asks you
+#     to re-run with the exact email to disambiguate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Admin action'
+        required: true
+        default: 'delete-user'
+        type: choice
+        options:
+          - delete-user
+      query:
+        description: 'Account to target — exact email OR a name to search (e.g. 양석훈)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type DELETE to actually delete. Leave blank for a dry-run (find only).'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  admin:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run admin action
+        env:
+          ACTION: ${{ inputs.action }}
+          QUERY: ${{ inputs.query }}
+          CONFIRM: ${{ inputs.confirm }}
+          DB_HOST: 127.0.0.1
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_MIGRATE_USER }}
+          DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+        run: |
+          set -euo pipefail
+          if ! command -v mysql >/dev/null 2>&1; then
+            echo "mysql client not found on runner."; exit 1
+          fi
+          if [ -z "${DB_USER:-}" ] || [ -z "${DB_NAME:-}" ]; then
+            echo "DB secrets (DB_NAME / DB_MIGRATE_USER / DB_MIGRATE_PASS) not set."; exit 1
+          fi
+          MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
+          MYSQLT="$MYSQL -t"
+
+          # Escape single quotes for safe SQL literals.
+          esc() { printf '%s' "$1" | sed "s/'/''/g"; }
+          Q="$(esc "$QUERY")"
+
+          if [ "$ACTION" = "delete-user" ]; then
+            echo "===== MATCHING ACCOUNTS for '$QUERY' ====="
+            $MYSQLT -e "
+              SELECT u.id, u.name, u.email, u.role, u.created_at,
+                (SELECT COUNT(*) FROM submissions s WHERE s.student_id=u.id) AS submissions,
+                (SELECT COUNT(*) FROM classrooms c WHERE c.teacher_id=u.id) AS classrooms_owned,
+                (SELECT COUNT(*) FROM assignments a WHERE a.teacher_id=u.id) AS assignments_owned
+              FROM users u
+              WHERE u.email = '$Q' OR u.name LIKE '%$Q%'
+              ORDER BY u.created_at;"
+
+            CNT="$($MYSQL -N -e "SELECT COUNT(*) FROM users WHERE email='$Q' OR name LIKE '%$Q%';")"
+            echo ""
+            echo "Matches: $CNT"
+
+            if [ "${CONFIRM:-}" != "DELETE" ]; then
+              echo "DRY-RUN: confirm was not 'DELETE', so nothing was deleted."
+              echo "Re-run with confirm=DELETE to remove the account totally."
+              exit 0
+            fi
+
+            if [ "$CNT" -eq 0 ]; then
+              echo "No account matched; nothing to delete."; exit 0
+            fi
+            if [ "$CNT" -ne 1 ]; then
+              echo "Refusing to delete: $CNT accounts matched. Re-run with the EXACT email to disambiguate."
+              exit 1
+            fi
+
+            UID_TO_DEL="$($MYSQL -N -e "SELECT id FROM users WHERE email='$Q' OR name LIKE '%$Q%' LIMIT 1;")"
+            echo "Deleting user id=$UID_TO_DEL (cascades to submissions/sessions/classrooms/assignments/memberships)..."
+            $MYSQL -e "DELETE FROM users WHERE id='$UID_TO_DEL';"
+            echo "Deleted. Verifying it's gone:"
+            $MYSQLT -e "SELECT COUNT(*) AS remaining FROM users WHERE id='$UID_TO_DEL';"
+          fi
+
+          echo ""
+          echo "Admin action complete."
