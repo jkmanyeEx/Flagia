@@ -498,6 +498,16 @@ const replayState = computed(() => {
       selLen = (e.meta && typeof e.meta.selectionLength === 'number')
         ? e.meta.selectionLength
         : 0
+
+      const key = e.meta?.key
+      if (key) {
+        // Fix IME composition selection lag in V2 telemetry:
+        if (hasBuf() && (isJamo(key) || key === 'Backspace')) {
+          pos = compStartPos
+        } else if (!hasBuf() && isJamo(key) && pos === 0 && committed.length > 0) {
+          pos = committed.length
+        }
+      }
     } else if (hasValidCursorData.value && e.meta && typeof e.meta.cursorPosition === 'number') {
       // Type A: legacy PM positions → map to plain text via Formula 1
       pos = mapPmPosToPlainIndex(committed, e.meta.cursorPosition)
