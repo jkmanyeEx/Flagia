@@ -796,6 +796,31 @@ const backLabel = computed(() =>
         </div>
       </div>
 
+      <!-- Score reconciliation: shown when a structural penalty was applied so
+           the gauge no longer equals the simple sum of the component cards. -->
+      <div v-if="analysis && analysis.scoreAdjustments && analysis.scoreAdjustments.length > 0" class="card p-6">
+        <h2 class="text-sm font-semibold text-text-primary mb-3">최종 점수 산출 내역</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between items-center">
+            <span class="text-text-secondary">구성요소 가중 합계</span>
+            <span class="font-mono font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}점</span>
+          </div>
+          <div v-for="(adj, i) in analysis.scoreAdjustments" :key="i" class="flex justify-between items-center text-flag-red">
+            <span>⚠️ {{ adj.label }}</span>
+            <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}점</span>
+          </div>
+          <div class="flex justify-between items-center pt-2 border-t border-border">
+            <span class="font-semibold text-text-primary">최종 Flagia Score</span>
+            <span class="font-mono font-bold text-base" :style="{ color: flagColor(analysis.flagStatus || '') }">
+              {{ (analysis.flagiaScore ?? 0).toFixed(1) }}점
+            </span>
+          </div>
+        </div>
+        <p class="text-xs text-text-muted mt-3 leading-relaxed">
+          개별 지표가 정상 범위에 있어도, 작성 과정 전반의 패턴(예: 충분한 분량을 거의 수정 없이 그대로 입력)이 감지되면 종합 점수에 추가 감점이 적용됩니다.
+        </p>
+      </div>
+
       <!-- Writing Timeline with custom hover tooltips -->
       <div v-if="timeline && timeline.length > 0" class="card p-6">
         <div class="flex items-center justify-between mb-4 border-b border-border pb-3">

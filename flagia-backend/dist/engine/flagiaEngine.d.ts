@@ -55,6 +55,11 @@ interface SessionSummary {
 interface AnalysisResult {
     version?: number;
     flagiaScore: number;
+    baseScore?: number;
+    scoreAdjustments?: {
+        label: string;
+        points: number;
+    }[];
     flagStatus: 'GREEN' | 'AMBER' | 'RED';
     coefficientOfVariation: number;
     revisionRatio: number;

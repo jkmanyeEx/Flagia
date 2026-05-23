@@ -625,26 +625,36 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     const totalDurationSec = Math.max(0, rawSpanSec - disconnectedMs / 1000);
     const timeScore = scoreWritingTime(totalDurationSec, effectiveTextLength);
     // ── Composite Flagia Score ──
-    let flagiaScore = cvScore * weights.cvWeight +
+    // baseScore is the weighted sum of the 5 components (what the component cards
+    // add up to). Structural penalties are then recorded as explicit adjustments
+    // so the final score always reconciles: final = baseScore + Σ adjustments.
+    const weightedSum = cvScore * weights.cvWeight +
         rrScore * weights.rrWeight +
         pasteScore * weights.pasteWeight +
         blurScore * weights.blurWeight +
         timeScore * weights.timeWeight;
-    // ── Linear-transcription (copy-typing) structural override ──
+    const baseScore = Math.round(Math.max(0, Math.min(100, weightedSum)) * 100) / 100;
+    const scoreAdjustments = [];
+    let flagiaScore = baseScore;
+    // ── Linear-transcription (copy-typing) structural penalty ──
     // The hardest cheat: read AI text off a second screen and type it by hand.
     // The keystrokes are genuinely human, so Cv/rhythm look fine and there's no
     // paste — the weighted sum stays green. But a SUBSTANTIAL, polished text typed
     // almost verbatim (very low revision) is the transcription signature: real
     // composition is messy (deletes/rewrites → higher RR). When that pattern holds
-    // and nothing meaningful was pasted, scale the whole score down so it can no
-    // longer pass on healthy rhythm alone. Threshold (RR<1.5, len≥200) is tunable.
+    // and nothing meaningful was pasted, scale the score down so it can no longer
+    // pass on healthy rhythm alone. Threshold (RR<1.5, len≥200) is tunable.
     const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
     let transcriptionSeverity = 0;
     if (effectiveTextLength >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.5 && pastedShare < 0.15) {
         transcriptionSeverity = Math.min(1, (1.5 - revisionRatio) / 0.5); // RR 1.5→0 … 1.0→1
-        flagiaScore = flagiaScore * (1 - 0.5 * transcriptionSeverity); // up to 50% reduction
+        const penalized = Math.round(Math.max(0, Math.min(100, baseScore * (1 - 0.5 * transcriptionSeverity))) * 100) / 100;
+        const delta = Math.round((penalized - baseScore) * 100) / 100;
+        if (delta < 0) {
+            scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점', points: delta });
+            flagiaScore = penalized;
+        }
     }
-    flagiaScore = Math.round(Math.max(0, Math.min(100, flagiaScore)) * 100) / 100;
     // ── Flag Status ──
     let flagStatus;
     if (flagiaScore >= thresholds.green) {
@@ -735,6 +745,8 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     return {
         version: 3,
         flagiaScore,
+        baseScore,
+        scoreAdjustments,
         flagStatus,
         coefficientOfVariation: Math.round(cv * 1000000) / 1000000,
         revisionRatio: Math.round(revisionRatio * 10000) / 10000,
