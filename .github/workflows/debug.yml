@@ -103,6 +103,10 @@ jobs:
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME -t"
               echo "--- last 5 submissions ---"
               $MYSQL -e "SELECT id, status, time_spent_sec AS tspent, LENGTH(final_markdown) AS md_len, created_at, submitted_at FROM submissions ORDER BY created_at DESC LIMIT 5;" || true
+              echo "--- scored submissions: raw metrics (why green?) ---"
+              $MYSQL -e "SELECT LEFT(id,8) AS id, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, LENGTH(final_markdown) AS md_len FROM submissions WHERE status IN ('SUBMITTED','FORCE_CLOSED') ORDER BY created_at DESC LIMIT 6;" || true
+              echo "--- per-component raw scores (from analysis_json) ---"
+              $MYSQL -e "SELECT LEFT(id,8) AS id, JSON_EXTRACT(analysis_json,'\$.components.typingRhythm.raw') AS rhythm, JSON_EXTRACT(analysis_json,'\$.components.revisionIntensity.raw') AS revision, JSON_EXTRACT(analysis_json,'\$.components.externalContent.raw') AS external, JSON_EXTRACT(analysis_json,'\$.components.focusDuration.raw') AS focus, JSON_EXTRACT(analysis_json,'\$.components.writingTime.raw') AS wtime, JSON_EXTRACT(analysis_json,'\$.sessionSummary.totalDurationSec') AS dur_s FROM submissions WHERE status IN ('SUBMITTED','FORCE_CLOSED') ORDER BY created_at DESC LIMIT 6;" || true
               echo "--- sessions + event counts for the last 5 submissions ---"
               $MYSQL -e "SELECT se.submission_id, se.id AS session_id, se.start_time, se.end_time, JSON_LENGTH(se.events_blob) AS events, LENGTH(se.events_blob) AS bytes FROM sessions se JOIN (SELECT id FROM submissions ORDER BY created_at DESC LIMIT 5) r ON r.id = se.submission_id ORDER BY se.start_time DESC;" || true
               echo "--- first 600 chars of the most-recent session's events_blob ---"
