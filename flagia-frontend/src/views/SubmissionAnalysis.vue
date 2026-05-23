@@ -323,6 +323,7 @@ const replayState = computed(() => {
   if (!events.value || events.value.length === 0) {
     return {
       text: '',
+      cursorPos: 0,
       keystrokeCount: 0,
       pasteCount: 0,
       blurCount: 0,
@@ -357,6 +358,7 @@ const replayState = computed(() => {
     const recent = kd.filter(e => e.timestamp >= thresholdTime - 30000 && e.timestamp <= thresholdTime).length
     return {
       text: fp.slice(0, revealLen),
+      cursorPos: revealLen,
       keystrokeCount: soFar,
       pasteCount,
       blurCount,
@@ -509,8 +511,11 @@ const replayState = computed(() => {
           }
           if (typeof nextPos === 'number' && nextPos < pos) {
             committed = committed.slice(0, nextPos) + committed.slice(pos)
+            pos = nextPos
           } else {
-            committed = committed.slice(0, Math.max(0, pos - 4)) + committed.slice(pos)
+            const oldPos = pos
+            pos = Math.max(0, pos - 4)
+            committed = committed.slice(0, pos) + committed.slice(oldPos)
           }
         } else {
           if (selLen === 0) {
@@ -533,6 +538,7 @@ const replayState = computed(() => {
                   committed = committed.slice(0, pos) + committed.slice(pos + 1)
                 } else {
                   committed = committed.slice(0, pos - 1) + committed.slice(pos)
+                  pos -= 1
                 }
               }
             }
@@ -541,6 +547,7 @@ const replayState = computed(() => {
       } else if (key === 'Enter') {
         flushBuf()
         committed = committed.slice(0, pos) + '\n' + committed.slice(pos)
+        pos += 1
       } else if (key && isJamo(key)) {
         if (!hasBuf()) {
           compStartPos = pos
@@ -609,6 +616,7 @@ const replayState = computed(() => {
         // Plain ASCII / printable character.
         flushBuf()
         committed = committed.slice(0, pos) + key + committed.slice(pos)
+        pos += 1
       }
       // Modifier / navigation keys: ignored (no buffer change).
     } else if (e.type === 'paste') {
@@ -623,6 +631,7 @@ const replayState = computed(() => {
       }
 
       committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
+      pos += pastedText.length
       logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
     } else if (e.type === 'blur') {
       flushBuf()
@@ -636,6 +645,8 @@ const replayState = computed(() => {
   }
 
   const text = committed.slice(0, compStartPos) + renderBuf() + committed.slice(compStartPos)
+  const rawCursorPos = hasBuf() ? compStartPos + renderBuf().length : pos
+  const cursorPos = Math.max(0, Math.min(text.length, rawCursorPos))
 
   const windowStart = thresholdTime - 30000
   const recentEvents = events.value.filter(
@@ -646,6 +657,7 @@ const replayState = computed(() => {
 
   return {
     text,
+    cursorPos,
     keystrokeCount,
     pasteCount,
     blurCount,
@@ -1141,7 +1153,12 @@ const backLabel = computed(() =>
               REPLAY SCREEN
             </div>
             <div class="flex-1 whitespace-pre-wrap break-all leading-relaxed pr-8 pt-4">
-              {{ replayState.text }}<span class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"></span>
+              <template v-if="replayState.cursorPos !== undefined">
+                <span>{{ replayState.text.slice(0, replayState.cursorPos) }}</span><span class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"></span><span>{{ replayState.text.slice(replayState.cursorPos) }}</span>
+              </template>
+              <template v-else>
+                {{ replayState.text }}<span class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"></span>
+              </template>
             </div>
           </div>
 
