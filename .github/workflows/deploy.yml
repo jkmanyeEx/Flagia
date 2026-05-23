@@ -102,3 +102,19 @@ jobs:
 
       - name: Restart PM2 process manager
         run: pm2 restart all
+
+      # Re-score every submitted/force-closed submission with the freshly
+      # deployed engine, so engine changes apply to existing submissions too.
+      # Runs from the live dir's compiled dist. Best-effort: never blocks deploy.
+      - name: Regrade existing submissions
+        continue-on-error: true
+        env:
+          DB_USER: ${{ secrets.DB_MIGRATE_USER }}
+          DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+        run: |
+          if [ -z "$DB_USER" ]; then
+            echo "DB secrets not set; skipping regrade."
+            exit 0
+          fi
+          cd "$HOME/server/Flagia/flagia-backend"
+          SQL_USER="$DB_USER" SQL_PW="$DB_PASS" node dist/regrade.js
