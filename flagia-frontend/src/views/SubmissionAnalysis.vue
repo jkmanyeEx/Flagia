@@ -299,19 +299,15 @@ const finalPlain = computed(() =>
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 )
-// Korean replay can't be reconstructed reliably per-keystroke: some setups log
-// every key as 'Process' (no character at all), and even when jamo ARE captured,
-// Hangul composition + heavy cursor editing (backspace/arrows) with imperfect
-// cursor offsets makes the automaton garble. So for any Korean-heavy session we
-// reveal the final text progressively, paced by the real keystroke timeline.
+// Korean (and other IME) typing logs every keystroke as key='Process' with no
+// character data, so per-keystroke text reconstruction is impossible. When a
+// session is IME-dominated we instead reveal the final text progressively, paced
+// by the real keystroke timeline.
 const imeDominated = computed(() => {
   const kd = events.value.filter(e => e.type === 'keydown')
   if (kd.length === 0) return false
-  const korean = kd.filter(e => {
-    const k = e.meta?.key
-    return k === 'Process' || k === 'Unidentified' || (typeof k === 'string' && /[ㄱ-ㆎ]/.test(k))
-  }).length
-  return korean / kd.length > 0.3
+  const ime = kd.filter(e => e.meta?.key === 'Process' || e.meta?.key === 'Unidentified').length
+  return ime / kd.length > 0.5
 })
 function composeSyllable(cho: string, jung: string, jong: string): string {
   const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
@@ -374,6 +370,7 @@ const replayState = computed(() => {
   // Active composition buffer
   let cho = '', jung = '', jong = ''
   let compStartPos = committed.length
+  let pos = committed.length
   const hasBuf = () => !!(cho || jung || jong)
   const renderBuf = () => hasBuf() ? composeSyllable(cho, jung, jong) : ''
   const flushBuf = () => {
@@ -381,6 +378,9 @@ const replayState = computed(() => {
       const bufText = renderBuf()
       committed = committed.slice(0, compStartPos) + bufText + committed.slice(compStartPos)
       compStartPos += bufText.length
+      if (pos >= compStartPos - bufText.length) {
+        pos += bufText.length
+      }
     }
     cho = ''; jung = ''; jong = ''
   }
@@ -410,7 +410,11 @@ const replayState = computed(() => {
   let lastJamoKey = ''
   let lastJamoTs = 0
 
-  for (const e of events.value) {
+  let lastBackspaceTime = 0
+  let modActive = false
+
+  for (let idx = 0; idx < events.value.length; idx++) {
+    const e = events.value[idx]
     if (e.timestamp > thresholdTime) break
 
     const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
@@ -430,7 +434,6 @@ const replayState = computed(() => {
     }
 
     // ── Position resolution ──
-    let pos: number
     let selLen = 0
 
     if (isV2) {
@@ -456,10 +459,24 @@ const replayState = computed(() => {
     if (e.type === 'keydown') {
       const key = e.meta?.key
 
+      if (key === 'Alt' || key === 'Control' || key === 'Meta' || key === 'Option') {
+        modActive = true
+      } else if (key !== 'Backspace') {
+        modActive = false
+      }
+
       // Skip keyboard shortcuts (Ctrl/Cmd/Alt held) and control/navigation
       // keys so they don't leak into the reconstructed text.
-      if (e.meta?.mod || (key && NON_CONTENT_KEYS.has(key))) {
+      if ((e.meta?.mod && key !== 'Backspace') || (key && NON_CONTENT_KEYS.has(key))) {
         continue
+      }
+
+      if (key === 'Backspace') {
+        if (e.timestamp - lastBackspaceTime < 15) {
+          lastBackspaceTime = e.timestamp
+          continue
+        }
+        lastBackspaceTime = e.timestamp
       }
 
       // If the cursor jumped during an active composition, flush the buffer first
@@ -476,26 +493,47 @@ const replayState = computed(() => {
       }
 
       if (key === 'Backspace') {
-        if (selLen === 0) {
-          // Delete one logical step from the composing buffer first,
-          // then fall through to committed text.
-          if (jong) {
-            const d = DECOMPOSE_JONG[jong]
-            jong = d ? d[0] : ''
-          } else if (jung) {
-            const d = DECOMPOSE_JUNG[jung]
-            jung = d ? d[0] : ''
-          } else if (cho) {
-            cho = ''
-          } else {
-            // Type A backspaceFix: when the cursor is at a paragraph boundary
-            // (newline), PM's Backspace merges paragraphs (deletes the \n forward)
-            // rather than deleting the character before the cursor.
-            if (pos > 0) {
-              if (!isV2 && committed[pos] === '\n') {
-                committed = committed.slice(0, pos) + committed.slice(pos + 1)
+        if (e.meta?.mod || modActive) {
+          flushBuf()
+          let nextPos = undefined
+          for (let nextIdx = idx + 1; nextIdx < events.value.length; nextIdx++) {
+            const ne = events.value[nextIdx]
+            if (ne.meta && typeof ne.meta.cursorPosition === 'number') {
+              if (isV2) {
+                nextPos = ne.meta.cursorPosition
               } else {
-                committed = committed.slice(0, pos - 1) + committed.slice(pos)
+                nextPos = mapPmPosToPlainIndex(committed, ne.meta.cursorPosition)
+              }
+              break
+            }
+          }
+          if (typeof nextPos === 'number' && nextPos < pos) {
+            committed = committed.slice(0, nextPos) + committed.slice(pos)
+          } else {
+            committed = committed.slice(0, Math.max(0, pos - 4)) + committed.slice(pos)
+          }
+        } else {
+          if (selLen === 0) {
+            // Delete one logical step from the composing buffer first,
+            // then fall through to committed text.
+            if (jong) {
+              const d = DECOMPOSE_JONG[jong]
+              jong = d ? d[0] : ''
+            } else if (jung) {
+              const d = DECOMPOSE_JUNG[jung]
+              jung = d ? d[0] : ''
+            } else if (cho) {
+              cho = ''
+            } else {
+              // Type A backspaceFix: when the cursor is at a paragraph boundary
+              // (newline), PM's Backspace merges paragraphs (deletes the \n forward)
+              // rather than deleting the character before the cursor.
+              if (pos > 0) {
+                if (!isV2 && committed[pos] === '\n') {
+                  committed = committed.slice(0, pos) + committed.slice(pos + 1)
+                } else {
+                  committed = committed.slice(0, pos - 1) + committed.slice(pos)
+                }
               }
             }
           }
@@ -578,12 +616,12 @@ const replayState = computed(() => {
       pasteCount++
       const len = e.meta?.pasteLength || 0
       const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
-      
+
       // If selection exists, delete the range before pasting
       if (selLen > 0) {
         committed = committed.slice(0, pos) + committed.slice(pos + selLen)
       }
-      
+
       committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
       logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
     } else if (e.type === 'blur') {

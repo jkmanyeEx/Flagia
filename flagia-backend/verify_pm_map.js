@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 
 const CHO_LIST  = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
-const JUNG_LIST = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','요','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+const JUNG_LIST = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
 const JONG_LIST = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
 const COMPOUND_JUNG = { 'ㅗㅏ':'ㅘ','ㅗㅐ':'ㅙ','ㅗㅣ':'ㅚ','ㅜㅓ':'ㅝ','ㅜㅔ':'ㅞ','ㅜㅣ':'ㅟ','ㅡㅣ':'ㅢ' };
 const DECOMPOSE_JUNG = { 'ㅘ':['ㅗ','ㅏ'],'ㅙ':['ㅗ','ㅐ'],'ㅚ':['ㅗ','ㅣ'],'ㅝ':['ㅜ','ㅓ'],'ㅞ':['ㅜ','ㅔ'],'ㅟ':['ㅜ','ㅣ'],'ㅢ':['ㅡ','ㅣ'] };
@@ -47,6 +47,7 @@ function runReplay(events, templateText) {
 
   let cho = '', jung = '', jong = '';
   let compStartPos = committed.length;
+  let pos = committed.length;
   
   const hasBuf = () => !!(cho || jung || jong);
   const renderBuf = () => hasBuf() ? composeSyllable(cho, jung, jong) : '';
@@ -55,9 +56,15 @@ function runReplay(events, templateText) {
       const bufText = renderBuf();
       committed = committed.slice(0, compStartPos) + bufText + committed.slice(compStartPos);
       compStartPos += bufText.length;
+      if (pos >= compStartPos - bufText.length) {
+        pos += bufText.length;
+      }
     }
     cho = ''; jung = ''; jong = '';
   };
+
+  let lastBackspaceTime = 0;
+  let modActive = false;
 
   for (const e of events) {
     const cursorPosition = e.meta && typeof e.meta.cursorPosition === 'number'
@@ -68,7 +75,7 @@ function runReplay(events, templateText) {
       ? e.meta.selectionLength
       : 0;
 
-    let pos = committed.length;
+    pos = committed.length;
     let selLen = 0;
 
     if (typeof cursorPosition === 'number') {
@@ -83,8 +90,22 @@ function runReplay(events, templateText) {
     if (e.type === 'keydown') {
       const key = e.meta?.key;
 
-      if (e.meta?.mod || (key && NON_CONTENT_KEYS.has(key))) {
+      if (key === 'Alt' || key === 'Control' || key === 'Meta' || key === 'Option') {
+        modActive = true;
+      } else if (key !== 'Backspace') {
+        modActive = false;
+      }
+
+      if ((e.meta?.mod && key !== 'Backspace') || (key && NON_CONTENT_KEYS.has(key))) {
         continue;
+      }
+
+      if (key === 'Backspace') {
+        if (e.timestamp - lastBackspaceTime < 15) {
+          lastBackspaceTime = e.timestamp;
+          continue;
+        }
+        lastBackspaceTime = e.timestamp;
       }
 
       if (hasBuf() && pos !== compStartPos && pos !== compStartPos + 1) {
@@ -97,18 +118,39 @@ function runReplay(events, templateText) {
       }
 
       if (key === 'Backspace') {
-        if (selLen === 0) {
-          if (jong) {
-            const d = DECOMPOSE_JONG[jong];
-            jong = d ? d[0] : '';
-          } else if (jung) {
-            const d = DECOMPOSE_JUNG[jung];
-            jung = d ? d[0] : '';
-          } else if (cho) {
-            cho = '';
+        if (e.meta?.mod || modActive) {
+          flushBuf();
+          let nextPos = undefined;
+          for (let nextIdx = events.indexOf(e) + 1; nextIdx < events.length; nextIdx++) {
+            const ne = events[nextIdx];
+            if (ne.meta && typeof ne.meta.cursorPosition === 'number') {
+              nextPos = mapPmPosToPlainIndex(committed, ne.meta.cursorPosition);
+              break;
+            }
+          }
+          if (typeof nextPos === 'number' && nextPos < pos) {
+            committed = committed.slice(0, nextPos) + committed.slice(pos);
           } else {
-            if (pos > 0) {
-              committed = committed.slice(0, pos - 1) + committed.slice(pos);
+            committed = committed.slice(0, Math.max(0, pos - 4)) + committed.slice(pos);
+          }
+        } else {
+          if (selLen === 0) {
+            if (jong) {
+              const d = DECOMPOSE_JONG[jong];
+              jong = d ? d[0] : '';
+            } else if (jung) {
+              const d = DECOMPOSE_JUNG[jung];
+              jung = d ? d[0] : '';
+            } else if (cho) {
+              cho = '';
+            } else {
+              if (pos > 0) {
+                if (committed[pos] === '\n') {
+                  committed = committed.slice(0, pos) + committed.slice(pos + 1);
+                } else {
+                  committed = committed.slice(0, pos - 1) + committed.slice(pos);
+                }
+              }
             }
           }
         }
@@ -187,6 +229,9 @@ function runReplay(events, templateText) {
     } else if (e.type === 'blur') {
       flushBuf();
     }
+    if (events.indexOf(e) < 100) {
+      console.log(`Step ${events.indexOf(e)}: ${e.type} key='${e.meta?.key}' pos=${pos} (raw=${cursorPosition}) => "${committed.slice(0, compStartPos) + renderBuf() + committed.slice(compStartPos)}"`);
+    }
   }
 
   return committed.slice(0, compStartPos) + renderBuf() + committed.slice(compStartPos);
@@ -228,6 +273,7 @@ async function main() {
     
     // Strip HTML from final_markdown to compare plain text
     const expectedPlain = final_markdown
+      .replace(/<\/p><p>/g, '\n')
       .replace(/<[^>]*>/g, '')
       .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
