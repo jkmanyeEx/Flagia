@@ -49,12 +49,16 @@ async function ensureSchema() {
             },
         },
         {
-            // Seed the owner/admin account. Runs after the role-enum step above so the
+            // Seed the admin accounts. Runs after the role-enum step above so the
             // ADMIN value is valid. Plain UPDATE (no ALTER needed), so it works via the
-            // app's own DB user. Re-asserted on every boot — this account stays admin.
-            name: "promote owner account to ADMIN",
+            // app's own DB user. Re-asserted on every boot — these accounts stay admin.
+            name: "promote admin accounts to ADMIN",
             run: async () => {
-                await database_1.default.query("UPDATE users SET role = 'ADMIN' WHERE email = ? AND role <> 'ADMIN'", ['devmeko463@gmail.com']);
+                const ADMIN_EMAILS = [
+                    'devmeko463@gmail.com', // owner
+                    'teacherhan@gmail.com', // 한지로
+                ];
+                await database_1.default.query("UPDATE users SET role = 'ADMIN' WHERE email IN (?) AND role <> 'ADMIN'", [ADMIN_EMAILS]);
             },
         },
     ];

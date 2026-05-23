@@ -8,4 +8,4 @@
 
 UPDATE users
 SET role = 'ADMIN'
-WHERE email = 'devmeko463@gmail.com' AND role <> 'ADMIN';
+WHERE email IN ('devmeko463@gmail.com', 'teacherhan@gmail.com') AND role <> 'ADMIN';
