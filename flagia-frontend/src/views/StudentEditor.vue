@@ -156,7 +156,9 @@ function connectWS() {
   }
   ws.onclose = () => {
     wsConnected.value = false
-    reconnectTimer = setTimeout(connectWS, 3000)
+    if (!submitted.value) {
+      reconnectTimer = setTimeout(connectWS, 3000)
+    }
   }
   ws.onerror = () => {
     wsConnected.value = false
@@ -260,6 +262,7 @@ async function submitEssay(forceClose = false) {
       isLocked.value = true
       clearInterval(timerInterval)
       clearInterval(flushInterval)
+      ws?.close()
     }
   } catch (err) {
     console.error('Submit error:', err)

@@ -559,9 +559,32 @@ export function runFlagiaAnalysis(
   const events = stripSubmitInducedBlur(rawEvents);
 
   // ── Template offset: strip HTML tags to get real text length ──
-  const templateLength = (templateText || '').length;
   const plainText = finalMarkdown.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  const effectiveTextLength = Math.max(1, plainText.length - templateLength);
+
+  // Strip HTML from template to do a proper text-to-text comparison
+  const plainTemplate = (templateText || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  // Estimate how much of the template is actually preserved in the final text.
+  // We divide the template into 20-char chunks and check how many exist in the final text.
+  let preservedTemplateLength = 0;
+  if (plainTemplate.length > 0) {
+    const chunkSize = 20;
+    const totalChunks = Math.ceil(plainTemplate.length / chunkSize);
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      const chunk = plainTemplate.substring(start, Math.min(start + chunkSize, plainTemplate.length));
+      if (chunk.length >= 10 && plainText.includes(chunk)) {
+        preservedTemplateLength += chunk.length;
+      }
+    }
+  }
+
+  const effectiveTextLength = Math.max(1, plainText.length - preservedTemplateLength);
 
   // ── IKI values: only CONTENT keydown events with valid IKI ──
   // Modifier and navigation keys (Shift, Meta, arrows, Backspace…) are not

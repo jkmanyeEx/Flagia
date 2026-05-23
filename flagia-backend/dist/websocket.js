@@ -79,6 +79,16 @@ function initWebSocket(server) {
                         const { submissionId, assignmentId } = payload;
                         clientState.submissionId = submissionId;
                         clientState.assignmentId = assignmentId;
+                        // Verify that the submission is in progress and exists
+                        const [subRows] = await database_1.default.query('SELECT status FROM submissions WHERE id = ?', [submissionId]);
+                        const sub = subRows[0];
+                        if (!sub || sub.status !== 'IN_PROGRESS') {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                payload: { error: '진행 중인 제출물만 세션에 참여할 수 있습니다' }
+                            }));
+                            break;
+                        }
                         // Create a new session record
                         const sessionId = (0, uuid_1.v4)();
                         const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || '';
