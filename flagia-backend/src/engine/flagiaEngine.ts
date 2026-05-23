@@ -179,16 +179,20 @@ function scoreCv(cv: number): number {
     return Math.max(2, Math.round(6 * (cv / 0.1)));    // 0 → 6
   }
 
-  // Slightly above natural range (still okay)
-  if (cv > 0.9 && cv <= 1.1) {
-    return Math.round(80 + ((1.1 - cv) / 0.2) * 20);
+  // ── Above the natural range = treated leniently ──
+  // A HIGH Cv just means very uneven keystroke timing — most often a student
+  // who pauses to think between bursts (정상적인 사고 멈춤). Genuine external
+  // copying/reference behaviour is already captured by the focus (blur) and
+  // external-content (paste) components, so penalizing high Cv here would
+  // double-count. We keep a gentle taper with a generous floor.
+  if (cv > 0.9 && cv <= 1.3) {
+    return Math.round(90 + ((1.3 - cv) / 0.4) * 10);   // 90 → 100
   }
-  // Getting erratic — possible paste+edit pattern
-  if (cv > 1.1 && cv <= 1.5) {
-    return Math.round(40 + ((1.5 - cv) / 0.4) * 40);
+  if (cv > 1.3 && cv <= 2.0) {
+    return Math.round(78 + ((2.0 - cv) / 0.7) * 12);   // 78 → 90
   }
-  // Very erratic
-  return Math.max(5, Math.round(40 - (cv - 1.5) * 20));
+  // Very erratic — still only a mild deduction (floor 70).
+  return Math.max(70, Math.round(78 - (cv - 2.0) * 4));
 }
 
 /**
@@ -208,15 +212,17 @@ function getCvDescription(cv: number, finalScore: number, rhythmConfidence: numb
 
   // High-confidence path: describe by score tier so text matches the number.
   if (finalScore >= 85) return '자연스러운 사람의 타이핑 리듬이 관찰됩니다. 키 입력 간격의 변동이 사람의 일반적인 범위 내에 있습니다.';
-  if (finalScore >= 70) return '대체로 자연스러운 타이핑 리듬입니다. 일반적인 사람의 작성 패턴 범위에 해당합니다.';
-  if (finalScore >= 50) {
-    if (cv < 0.3) return '타이핑 속도가 다소 일정합니다. 미리 작성된 텍스트를 보고 옮겨 치고 있을 가능성이 있습니다.';
-    return '타이핑 리듬에 일부 비정상적인 변동이 관찰됩니다. 간헐적인 수정 작업이나 외부 참고가 포함된 것으로 보입니다.';
+  if (finalScore >= 70) {
+    if (cv > 1.1) return '키 입력 간격의 편차가 큽니다. 중간중간 충분히 생각하며(사고 멈춤) 작성한 것으로 보이는 자연스러운 패턴입니다.';
+    return '대체로 자연스러운 타이핑 리듬입니다. 일반적인 사람의 작성 패턴 범위에 해당합니다.';
   }
-  // Low score
-  if (cv < 0.2) return '타이핑 리듬이 매우 균일합니다. 자동 입력이나 준비된 텍스트를 그대로 옮겨 쓰는 패턴입니다.';
+  if (finalScore >= 50) {
+    return '타이핑 속도가 다소 일정합니다. 미리 작성된 텍스트를 보고 옮겨 치고 있을 가능성이 있습니다.';
+  }
+  // Low score → suspiciously uniform (high Cv is no longer penalized into this
+  // tier — it's treated as thinking pauses above).
   if (cv < 0.1) return '키 입력이 기계적으로 균일합니다. 자동 입력 도구나 매크로 사용이 강하게 의심됩니다.';
-  return '키 입력 간격의 변동이 비정상적으로 큽니다. 외부 소스에서 복사한 뒤 간헐적으로 편집한 패턴일 수 있습니다.';
+  return '타이핑 리듬이 비정상적으로 균일합니다. 외부의 글을 보며 그대로 옮겨 쓴(베껴 쓰기) 패턴이 의심됩니다.';
 }
 
 /**
