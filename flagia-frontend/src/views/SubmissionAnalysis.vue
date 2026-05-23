@@ -299,15 +299,19 @@ const finalPlain = computed(() =>
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 )
-// Korean (and other IME) typing logs every keystroke as key='Process' with no
-// character data, so per-keystroke text reconstruction is impossible. When a
-// session is IME-dominated we instead reveal the final text progressively, paced
-// by the real keystroke timeline.
+// Korean replay can't be reconstructed reliably per-keystroke: some setups log
+// every key as 'Process' (no character at all), and even when jamo ARE captured,
+// Hangul composition + heavy cursor editing (backspace/arrows) with imperfect
+// cursor offsets makes the automaton garble. So for any Korean-heavy session we
+// reveal the final text progressively, paced by the real keystroke timeline.
 const imeDominated = computed(() => {
   const kd = events.value.filter(e => e.type === 'keydown')
   if (kd.length === 0) return false
-  const ime = kd.filter(e => e.meta?.key === 'Process' || e.meta?.key === 'Unidentified').length
-  return ime / kd.length > 0.5
+  const korean = kd.filter(e => {
+    const k = e.meta?.key
+    return k === 'Process' || k === 'Unidentified' || (typeof k === 'string' && /[ㄱ-ㆎ]/.test(k))
+  }).length
+  return korean / kd.length > 0.3
 })
 function composeSyllable(cho: string, jung: string, jong: string): string {
   const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
@@ -341,7 +345,7 @@ const replayState = computed(() => {
     const kd = events.value.filter(e => e.type === 'keydown')
     const total = kd.length
     const soFar = kd.filter(e => e.timestamp <= thresholdTime).length
-    const fp = finalPlain.value
+    const fp = finalPlain.value.replace(/^\s+/, '') // drop leading whitespace so it doesn't open blank
     const revealLen = total > 0 ? Math.round(fp.length * (soFar / total)) : fp.length
     let pasteCount = 0, blurCount = 0
     const logs: string[] = []
@@ -1054,7 +1058,7 @@ const backLabel = computed(() =>
               <span class="badge badge-green text-xs">Simulated Playback</span>
             </h2>
             <p class="text-xs text-text-muted mt-0.5">학생의 키 입력 리듬과 지우기, 붙여넣기 역사를 리얼타임 시뮬레이션으로 복원합니다.</p>
-            <p v-if="imeDominated" class="text-xs text-amber-600 mt-1">⌨️ 한글 입력기(IME)로 작성된 제출물입니다. 입력기는 키 단위 문자를 기록하지 않으므로, 본문은 실제 키 입력 타이밍에 맞춰 점진적으로 표시됩니다(타이핑 속도·리듬은 정확).</p>
+            <p v-if="imeDominated" class="text-xs text-amber-600 mt-1">⌨️ 한글(IME)로 작성된 제출물입니다. 한글 입력은 키 단위 편집 과정을 정확히 복원하기 어려워, 본문은 실제 키 입력 타이밍에 맞춰 최종 글이 점진적으로 표시됩니다(타이핑 속도·리듬 지표는 정확).</p>
           </div>
           
           <div class="flex items-center gap-2 text-xs">
