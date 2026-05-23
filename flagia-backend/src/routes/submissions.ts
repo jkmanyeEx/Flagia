@@ -499,4 +499,42 @@ router.post('/:id/grade', authMiddleware, teacherOnly, async (req: Request, res:
   }
 });
 
+// DELETE /api/submissions/:id — delete submission (teacher only)
+router.delete('/:id', authMiddleware, teacherOnly, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+
+    // Get submission info to check ownership
+    const [subRows] = await pool.query(
+      `SELECT s.assignment_id, s.student_id, a.teacher_id 
+       FROM submissions s 
+       JOIN assignments a ON s.assignment_id = a.id 
+       WHERE s.id = ?`,
+      [req.params.id]
+    );
+    const sub = (subRows as any[])[0];
+    if (!sub) {
+      res.status(404).json({ error: '제출물을 찾을 수 없습니다' });
+      return;
+    }
+
+    // Only assignment owner teacher or admin may delete
+    if (sub.teacher_id !== user.userId && user.role !== 'ADMIN') {
+      res.status(403).json({ error: '본인이 만든 과제의 제출물만 삭제할 수 있습니다' });
+      return;
+    }
+
+    // Delete submission. Cascade deletes sessions
+    await pool.query('DELETE FROM submissions WHERE id = ?', [req.params.id]);
+
+    // Notify student and teacher of updates
+    notifySubmissionsUpdate(sub.assignment_id, sub.student_id);
+
+    res.json({ message: '제출물이 삭제되었습니다' });
+  } catch (err) {
+    console.error('Delete submission error:', err);
+    res.status(500).json({ error: '제출물을 삭제할 수 없습니다' });
+  }
+});
+
 export default router;

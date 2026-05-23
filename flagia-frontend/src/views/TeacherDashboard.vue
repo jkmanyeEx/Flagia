@@ -30,6 +30,9 @@ const showDetailModal = ref(false)
 const showDeleteModal = ref(false)
 const assignmentToDelete = ref<string | null>(null)
 const detailSubmission = ref<any>(null)
+const showDeleteSubModal = ref(false)
+const subToDelete = ref<any>(null)
+const deletingSub = ref(false)
 
 // Create form
 const form = ref({
@@ -286,6 +289,36 @@ async function executeDelete() {
   } catch { /* noop */ } finally {
     showDeleteModal.value = false
     assignmentToDelete.value = null
+  }
+}
+
+function confirmDeleteSub(sub: any) {
+  subToDelete.value = sub
+  showDeleteSubModal.value = true
+}
+
+async function executeDeleteSub() {
+  const sub = subToDelete.value
+  if (!sub) return
+  deletingSub.value = true
+  try {
+    const res = await fetch(`${API}/api/submissions/${sub.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token.value}` },
+    })
+    if (res.ok) {
+      submissions.value = submissions.value.filter(s => s.id !== sub.id)
+      showDetailModal.value = false
+      showDeleteSubModal.value = false
+      subToDelete.value = null
+    } else {
+      const e = await res.json().catch(() => ({}))
+      alert(e.error || '제출물 삭제에 실패했습니다')
+    }
+  } catch (err) {
+    alert('제출물 삭제 중 오류가 발생했습니다')
+  } finally {
+    deletingSub.value = false
   }
 }
 
@@ -569,8 +602,17 @@ function getGaugeOffset(score: number) {
         </div>
 
         <h4 class="text-sm font-semibold mb-2">제출 내용</h4>
-        <div class="border border-border rounded-lg p-6 max-h-[50vh] overflow-y-auto bg-white shadow-inner">
+        <div class="border border-border rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
           <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || '(내용 없음)'"></div>
+        </div>
+
+        <div class="flex justify-between items-center pt-4 border-t border-border">
+          <button @click="confirmDeleteSub(detailSubmission)" class="btn btn-danger btn-sm">
+            제출물 삭제 (다시 쓰기 허용)
+          </button>
+          <button @click="showDetailModal = false" class="btn btn-outline btn-sm">
+            닫기
+          </button>
         </div>
       </div>
     </div>
@@ -699,6 +741,21 @@ function getGaugeOffset(score: number) {
         <div class="flex gap-2">
           <button @click="showDeleteModal = false" class="btn btn-outline flex-1">취소</button>
           <button @click="executeDelete" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">삭제</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Submission Confirmation Modal -->
+    <div v-if="showDeleteSubModal" class="modal-overlay" @click.self="showDeleteSubModal = false">
+      <div class="modal-content max-w-sm mx-4 p-6 text-center">
+        <div class="text-4xl mb-4">🗑️</div>
+        <h3 class="text-lg font-bold mb-2">제출물 삭제</h3>
+        <p class="text-sm text-text-secondary mb-6">제출물을 삭제하시겠습니까?<br>학생의 진행 상황과 작성 시간이 모두 초기화되며, 학생은 처음부터 다시 작성할 수 있게 됩니다.</p>
+        <div class="flex gap-2">
+          <button @click="showDeleteSubModal = false" class="btn btn-outline flex-1">취소</button>
+          <button @click="executeDeleteSub" :disabled="deletingSub" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">
+            {{ deletingSub ? '삭제 중...' : '삭제' }}
+          </button>
         </div>
       </div>
     </div>
