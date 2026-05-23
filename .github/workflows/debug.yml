@@ -103,8 +103,14 @@ jobs:
               echo "mysql client or DB secrets unavailable; skipping."
             else
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME -t"
-              echo "--- TARGET: teacherhan @ 02F530 — keydown key-value distribution ---"
-              $MYSQL -e "SELECT jt.k AS key_val, COUNT(*) AS cnt FROM sessions se JOIN submissions s ON se.submission_id=s.id JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id JOIN JSON_TABLE(se.events_blob, '\$[*]' COLUMNS (typ VARCHAR(20) PATH '\$.type', k VARCHAR(24) PATH '\$.meta.key')) jt WHERE u.email='teacherhan@gmail.com' AND a.join_code='02F530' AND jt.typ='keydown' GROUP BY jt.k ORDER BY cnt DESC LIMIT 30;" || true
+              echo "--- TARGET: onsae09 — submission overview ---"
+              $MYSQL -e "SELECT s.id, s.status, LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions FROM submissions s JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 3;" || true
+              echo "--- onsae09 keydown key distribution ---"
+              $MYSQL -e "SELECT jt.k AS key_val, COUNT(*) AS cnt FROM sessions se JOIN submissions s ON se.submission_id=s.id JOIN users u ON s.student_id=u.id JOIN JSON_TABLE(se.events_blob, '\$[*]' COLUMNS (typ VARCHAR(20) PATH '\$.type', k VARCHAR(24) PATH '\$.meta.key')) jt WHERE u.email='onsae09@gmail.com' AND jt.typ='keydown' GROUP BY jt.k ORDER BY cnt DESC LIMIT 15;" || true
+              echo "--- onsae09 final_markdown (first 400 chars) ---"
+              $MYSQL -N -e "SELECT SUBSTRING(s.final_markdown,1,400) FROM submissions s JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 1;" || true
+              echo "--- onsae09 template_text (first 300 chars) ---"
+              $MYSQL -N -e "SELECT SUBSTRING(a.template_text,1,300) FROM submissions s JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 1;" || true
               echo "--- last 5 submissions ---"
               $MYSQL -e "SELECT id, status, time_spent_sec AS tspent, LENGTH(final_markdown) AS md_len, created_at, submitted_at FROM submissions ORDER BY created_at DESC LIMIT 5;" || true
               echo "--- scored submissions: raw metrics (why green?) ---"
