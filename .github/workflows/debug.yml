@@ -21,6 +21,7 @@ on:
           - health
           - git
           - submissions
+          - regrade
 
 jobs:
   diagnostics:
@@ -112,6 +113,16 @@ jobs:
               $MYSQL -e "SELECT c.id, LEFT(c.name,20) AS name, (SELECT COUNT(*) FROM classroom_members m WHERE m.classroom_id=c.id) AS members, (SELECT COUNT(*) FROM assignments a WHERE a.classroom_id=c.id) AS assignments FROM classrooms c ORDER BY c.created_at DESC LIMIT 8;" || true
               echo "--- students (most recent) ---"
               $MYSQL -e "SELECT id, LEFT(email,28) AS email, created_at FROM users WHERE role='STUDENT' ORDER BY created_at DESC LIMIT 8;" || true
+            fi
+          fi
+
+          if want regrade; then
+            line "REGRADE ALL SUBMITTED SUBMISSIONS (new engine)"
+            if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+              echo "DB secrets unavailable; skipping regrade."
+            else
+              cd "$HOME/server/Flagia/flagia-backend"
+              SQL_USER="$DB_USER" SQL_PW="$DB_PASS" node dist/regrade.js 2>&1 | tail -60 || true
             fi
           fi
 

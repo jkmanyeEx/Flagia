@@ -73,21 +73,26 @@ function scoreCv(cv) {
     // Sweet spot: natural human variation
     if (cv >= 0.4 && cv <= 0.9)
         return 100;
-    // Slightly below natural range (still okay)
+    // ── Below the natural range = COPY-TYPING danger zone ──
+    // A human composing their own thoughts is bimodal: fast jamo/letter bursts
+    // punctuated by cognitive micro-pauses (500–1500ms) at idea/word boundaries.
+    // That bimodality keeps Cv up. A near-uniform low Cv means the keystrokes
+    // were almost certainly read off-screen and transcribed (사서 베껴 치기), so
+    // the penalty here is deliberately harsh.
     if (cv >= 0.3 && cv < 0.4) {
-        return Math.round(80 + ((cv - 0.3) / 0.1) * 20);
+        return Math.round(70 + ((cv - 0.3) / 0.1) * 30); // 70 → 100
     }
-    // Getting too uniform — suspicious
+    // Suspiciously consistent — strong copy-typing signal.
     if (cv >= 0.2 && cv < 0.3) {
-        return Math.round(50 + ((cv - 0.2) / 0.1) * 30);
+        return Math.round(22 + ((cv - 0.2) / 0.1) * 33); // 22 → 55
     }
-    // Very uniform — likely copy-typing or automated
+    // Very uniform — copy-typing / automated transcription.
     if (cv >= 0.1 && cv < 0.2) {
-        return Math.round(20 + ((cv - 0.1) / 0.1) * 30);
+        return Math.round(6 + ((cv - 0.1) / 0.1) * 16); // 6 → 22
     }
-    // Machine-like uniformity
+    // Machine-like uniformity.
     if (cv < 0.1) {
-        return Math.max(5, Math.round(20 * (cv / 0.1)));
+        return Math.max(2, Math.round(6 * (cv / 0.1))); // 0 → 6
     }
     // Slightly above natural range (still okay)
     if (cv > 0.9 && cv <= 1.1) {
@@ -417,6 +422,60 @@ function generateVerdict(flagiaScore, flagStatus, scores, mode) {
     details.push(`\n분석 모드: ${mode} | 최종 점수: ${flagiaScore}점`);
     return { verdict, verdictDetail: details.join(' ') };
 }
+// ── Linguistic pause alignment (Part 2) ────────────────────────────────────
+// A genuine writer's cognitive pauses (500–1500ms) land at SEMANTIC boundaries
+// — after a space/punctuation, or before starting a new word — because the
+// pause is "what do I write next?" thinking. A copy-typist reading text off a
+// screen pauses wherever their eyes lose their place, which lands MID-WORD.
+//
+// Cursor offsets are unreliable, so instead of position we use the KEY SEQUENCE:
+// for each long-IKI keystroke we look at the key just before and the key just
+// after the pause. If neither is a delimiter (both are letters/jamo), the pause
+// happened in the middle of a word — the copy-typing signature.
+function isContentChar(k) {
+    if (!k || k.length !== 1)
+        return false;
+    // Hangul syllables + compatibility jamo, latin letters, digits.
+    return /[가-힣㄰-㆏0-9A-Za-z]/.test(k);
+}
+const PAUSE_DELIMITERS = new Set([
+    ' ', ' ', '\n', 'Enter', '\t',
+    '.', ',', '!', '?', ';', ':', ')', ']', '}', '(', '[', '{',
+    '"', "'", '。', '、', '·', '…', '~', '-', '/',
+]);
+function isPauseDelimiter(k) {
+    return !!k && PAUSE_DELIMITERS.has(k);
+}
+function analyzePauseAlignment(events) {
+    const PAUSE_MIN_MS = 500; // below this is motor rhythm, not cognition
+    const PAUSE_MAX_MS = 10000; // above this is AFK / tab-switch, not a "thinking pause"
+    let cognitive = 0;
+    let midWord = 0;
+    let prevKey = null; // last "flow" key (content or delimiter)
+    for (const e of events) {
+        if (e.type !== 'keydown')
+            continue;
+        const k = e.meta?.key;
+        // Only the writing flow matters: skip modifiers, arrows, backspace, etc.
+        if (!isContentChar(k) && !isPauseDelimiter(k))
+            continue;
+        if (e.iki > PAUSE_MIN_MS && e.iki < PAUSE_MAX_MS) {
+            cognitive++;
+            const atBoundary = isPauseDelimiter(prevKey) || isPauseDelimiter(k);
+            if (!atBoundary && isContentChar(prevKey) && isContentChar(k))
+                midWord++;
+        }
+        prevKey = k ?? null;
+    }
+    // Too few pauses to judge → neutral (no penalty).
+    if (cognitive < 8)
+        return { cognitivePauses: cognitive, midWordPauses: midWord, midWordRatio: 0, score: 100 };
+    const midWordRatio = midWord / cognitive;
+    // Allow ~15% mid-word pauses as natural; penalize sharply beyond that.
+    // 0.15→100, 0.50→44, 0.70→12, 0.85→0
+    const score = Math.max(0, Math.min(100, Math.round(100 - (midWordRatio - 0.15) * 160)));
+    return { cognitivePauses: cognitive, midWordPauses: midWord, midWordRatio, score };
+}
 /**
  * Main analysis function
  */
@@ -480,12 +539,49 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     const rhythmConfidence = Math.min(sampleConfidence, contentConfidence);
     const RHYTHM_FLOOR = 5;
     const rawCvScore = scoreCv(cv);
-    const cvScore = Math.round(rawCvScore * rhythmConfidence + RHYTHM_FLOOR * (1 - rhythmConfidence));
-    const rrScore = scoreRevisionRatio(revisionRatio);
+    // ── Part 2: blend in linguistic pause alignment ──
+    // Cv alone can be fooled by a copy-typist whose scan-delays raise variance.
+    // Pause alignment catches them: if their long pauses land mid-word rather than
+    // at semantic boundaries, the rhythm isn't genuine composition.
+    const pauseAlign = analyzePauseAlignment(events);
+    const rhythmAuthenticity = pauseAlign.cognitivePauses >= 8
+        ? Math.round(rawCvScore * 0.6 + pauseAlign.score * 0.4)
+        : rawCvScore;
+    const cvScore = Math.round(rhythmAuthenticity * rhythmConfidence + RHYTHM_FLOOR * (1 - rhythmConfidence));
+    // ── Part 3: paste-then-disguise detection (temporal, cursor-free) ──
+    // A cheater pastes a large block then sprinkles edits to inflate the revision
+    // ratio into the "safe" zone. Cursor offsets are unreliable, so we detect the
+    // disguise by TIME: edits clustered right after a paste don't count as genuine
+    // authorship. If a meaningful chunk was pasted AND most keystrokes happen in
+    // the window just after pastes, we discount the laundered revision credit and
+    // dock the external-content score.
+    const PASTE_EDIT_WINDOW_MS = 120000; // 2 min after each paste
+    const pasteTimes = events.filter(e => e.type === 'paste').map(e => e.timestamp);
+    let pasteAdjacentKeydowns = 0;
+    if (pasteTimes.length > 0) {
+        for (const e of events) {
+            if (e.type !== 'keydown')
+                continue;
+            if (pasteTimes.some(pt => e.timestamp >= pt && e.timestamp <= pt + PASTE_EDIT_WINDOW_MS)) {
+                pasteAdjacentKeydowns++;
+            }
+        }
+    }
+    const pasteAdjacentRatio = totalKeydowns > 0 ? pasteAdjacentKeydowns / totalKeydowns : 0;
+    const pastedVolumeRatio = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
+    const pasteLaundering = pastedVolumeRatio > 0.15 && pasteAdjacentRatio > 0.4;
+    let rrScore = scoreRevisionRatio(revisionRatio);
+    if (pasteLaundering) {
+        // The "revision" is mostly editing pasted text, not original writing.
+        rrScore = Math.round(rrScore * (1 - Math.min(0.7, pasteAdjacentRatio)));
+    }
     const pasteCountScore = scorePasteCount(totalPasteCount);
     const pasteVolumeScore = scorePasteVolume(totalPastedLength, effectiveTextLength);
     // Blend count and volume: volume is weighted higher (60/40) since it captures severity better
-    const pasteScore = Math.round(pasteVolumeScore * 0.6 + pasteCountScore * 0.4);
+    let pasteScore = Math.round(pasteVolumeScore * 0.6 + pasteCountScore * 0.4);
+    if (pasteLaundering) {
+        pasteScore = Math.round(pasteScore * (1 - 0.3 * Math.min(1, pasteAdjacentRatio)));
+    }
     const blurScore = scoreBlurDuration(totalBlurDuration);
     // ── Writing-time score: derived from active session span vs. final text length ──
     // The student may have left the site and come back; that wall-clock gap is NOT
@@ -551,7 +647,10 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             weighted: Math.round(cvScore * weights.cvWeight * 100) / 100,
             weight: weights.cvWeight,
             label: '타이핑 리듬',
-            description: getCvDescription(cv, cvScore, rhythmConfidence, ikiValues.length),
+            description: getCvDescription(cv, cvScore, rhythmConfidence, ikiValues.length)
+                + (pauseAlign.cognitivePauses >= 8 && pauseAlign.midWordRatio > 0.5
+                    ? ` ⚠️ 인지적 멈춤의 약 ${Math.round(pauseAlign.midWordRatio * 100)}%가 단어 중간에서 발생했습니다. 의미 경계가 아닌 곳에서 멈춘다는 것은 화면의 글을 시각적으로 따라가며 베껴 쓴 정황을 시사합니다.`
+                    : ''),
             status: getComponentStatus(cvScore),
         },
         revisionIntensity: {
@@ -559,7 +658,10 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             weighted: Math.round(rrScore * weights.rrWeight * 100) / 100,
             weight: weights.rrWeight,
             label: '수정 강도',
-            description: getRrDescription(revisionRatio),
+            description: getRrDescription(revisionRatio)
+                + (pasteLaundering
+                    ? ` ⚠️ 수정 입력의 약 ${Math.round(pasteAdjacentRatio * 100)}%가 붙여넣기 직후 구간에 집중되어 있습니다. 외부 텍스트를 붙여넣은 뒤 부분 수정으로 수정 흔적을 위장한 정황이 의심됩니다.`
+                    : ''),
             status: getComponentStatus(rrScore),
         },
         externalContent: {
