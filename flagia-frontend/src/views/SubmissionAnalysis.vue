@@ -270,13 +270,14 @@ const DECOMPOSE_JONG: Record<string, [string, string]> = {
   'ㄳ':['ㄱ','ㅅ'],'ㄵ':['ㄴ','ㅈ'],'ㄶ':['ㄴ','ㅎ'],'ㄺ':['ㄹ','ㄱ'],'ㄻ':['ㄹ','ㅁ'],'ㄼ':['ㄹ','ㅂ'],'ㄽ':['ㄹ','ㅅ'],'ㄾ':['ㄹ','ㅌ'],'ㄿ':['ㄹ','ㅍ'],'ㅀ':['ㄹ','ㅎ'],'ㅄ':['ㅂ','ㅅ'],
 }
 // Keys that are not typed text — never render them in the replay canvas.
+// 'Process'/'Unidentified'/'Dead' are IME composition keystrokes (Korean etc.) —
+// they are real keystrokes, not modifiers, so they're NOT excluded here.
 const NON_CONTENT_KEYS = new Set([
   'Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape',
   'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
   'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete',
   'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
   'ContextMenu', 'Pause', 'ScrollLock', 'NumLock', 'PrintScreen',
-  'Process', 'Unidentified', 'Dead',
 ])
 function isJamo(k: string) { return /^[ㄱ-ㆎ]$/.test(k) }
 function isJung(k: string) { return JUNG_LIST.includes(k) }
@@ -291,6 +292,23 @@ const templatePlain = computed(() =>
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 )
+const finalPlain = computed(() =>
+  (submission.value?.finalMarkdown || '')
+    .replace(/<\/p><p>/g, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+)
+// Korean (and other IME) typing logs every keystroke as key='Process' with no
+// character data, so per-keystroke text reconstruction is impossible. When a
+// session is IME-dominated we instead reveal the final text progressively, paced
+// by the real keystroke timeline.
+const imeDominated = computed(() => {
+  const kd = events.value.filter(e => e.type === 'keydown')
+  if (kd.length === 0) return false
+  const ime = kd.filter(e => e.meta?.key === 'Process' || e.meta?.key === 'Unidentified').length
+  return ime / kd.length > 0.5
+})
 function composeSyllable(cho: string, jung: string, jong: string): string {
   const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
   if (ci < 0 || ji < 0 || gi < 0) return (cho || '') + (jung || '') + (jong || '')
@@ -315,6 +333,39 @@ const replayState = computed(() => {
   }
 
   const thresholdTime = minTime.value + replayCurrentMs.value
+
+  // ── IME-dominated session (Korean etc.): per-keystroke reconstruction is
+  // impossible (every key is 'Process'), so reveal the final text progressively
+  // in sync with the keystroke timeline. Keystrokes/paste/blur are still counted. ──
+  if (imeDominated.value) {
+    const kd = events.value.filter(e => e.type === 'keydown')
+    const total = kd.length
+    const soFar = kd.filter(e => e.timestamp <= thresholdTime).length
+    const fp = finalPlain.value
+    const revealLen = total > 0 ? Math.round(fp.length * (soFar / total)) : fp.length
+    let pasteCount = 0, blurCount = 0
+    const logs: string[] = []
+    let activeStatus = '작성 중 (한글 입력)'
+    for (const e of events.value) {
+      if (e.timestamp > thresholdTime) break
+      const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
+      const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
+      if (e.type === 'paste') { pasteCount++; logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`) }
+      else if (e.type === 'blur') { blurCount++; activeStatus = '화면 이탈'; logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`) }
+      else if (e.type === 'focus') { activeStatus = '작성 중 (한글 입력)'; logs.push(`[${timeStr}] ✏️ 에디터로 복귀`) }
+    }
+    const recent = kd.filter(e => e.timestamp >= thresholdTime - 30000 && e.timestamp <= thresholdTime).length
+    return {
+      text: fp.slice(0, revealLen),
+      keystrokeCount: soFar,
+      pasteCount,
+      blurCount,
+      currentWpm: Math.round(recent / 2.5),
+      activeStatus,
+      logs: logs.slice(-15).reverse(),
+    }
+  }
+
   let committed = templatePlain.value
   // Active composition buffer
   let cho = '', jung = '', jong = ''
@@ -1003,6 +1054,7 @@ const backLabel = computed(() =>
               <span class="badge badge-green text-xs">Simulated Playback</span>
             </h2>
             <p class="text-xs text-text-muted mt-0.5">학생의 키 입력 리듬과 지우기, 붙여넣기 역사를 리얼타임 시뮬레이션으로 복원합니다.</p>
+            <p v-if="imeDominated" class="text-xs text-amber-600 mt-1">⌨️ 한글 입력기(IME)로 작성된 제출물입니다. 입력기는 키 단위 문자를 기록하지 않으므로, 본문은 실제 키 입력 타이밍에 맞춰 점진적으로 표시됩니다(타이핑 속도·리듬은 정확).</p>
           </div>
           
           <div class="flex items-center gap-2 text-xs">

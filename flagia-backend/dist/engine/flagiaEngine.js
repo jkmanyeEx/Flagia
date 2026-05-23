@@ -14,14 +14,17 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runFlagiaAnalysis = runFlagiaAnalysis;
-// Keys that are not typed content and should be excluded from rhythm analysis
+// Keys that are not typed content and should be excluded from rhythm analysis.
+// NOTE: 'Process'/'Unidentified'/'Dead' are NOT excluded — Korean (and other IME)
+// input fires keydown with key='Process' during composition. Those are REAL
+// content keystrokes (each jamo is a press), and their inter-keystroke timing IS
+// the typing rhythm. Excluding them dropped all Korean keystrokes → Cv = 0.
 const NON_CONTENT_KEYS = new Set([
     'Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape',
     'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
     'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete', 'Backspace',
     'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
     'ContextMenu', 'Pause', 'ScrollLock', 'NumLock', 'PrintScreen',
-    'Process', 'Unidentified', 'Dead',
 ]);
 // IKI samples beyond this are treated as "thinking pauses", not typing rhythm.
 // Korean typing is naturally bimodal (intra-syllable ~50ms, inter-word ~300ms);
