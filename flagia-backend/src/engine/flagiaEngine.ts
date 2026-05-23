@@ -666,19 +666,32 @@ export function runFlagiaAnalysis(
   // overall span. leave/reconnect carry server timestamps, so each gap duration
   // is accurate regardless of client clock skew; subtracting an accurate
   // duration from the (client-time) activity span yields the real active time.
+  // Only subtract disconnect gaps that are INTERNAL to the writing — i.e. the
+  // student left mid-write and came BACK and wrote more. Gaps after the last
+  // keystroke (e.g. leaving the editor tab open afterward, which makes the WS
+  // reconnect every couple of minutes and emit reconnect/leave markers with no
+  // typing) must NOT be subtracted: the activity span doesn't include them, so
+  // subtracting would wrongly drive the writing time toward 0.
+  let lastActivityIdx = -1;
+  for (let i = 0; i < events.length; i++) {
+    const t = events[i].type;
+    if (t !== 'leave' && t !== 'reconnect') lastActivityIdx = i;
+  }
   let disconnectedMs = 0;
   let reconnectCount = 0;
   let pendingLeave: number | null = null;
-  for (const e of events) {
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
     if (e.type === 'leave') {
       pendingLeave = e.timestamp;
     } else if (e.type === 'reconnect') {
       reconnectCount++;
-      if (pendingLeave !== null) {
+      // Count the gap only if real activity continues after this reconnect.
+      if (pendingLeave !== null && i < lastActivityIdx) {
         const gap = e.timestamp - pendingLeave;
         if (gap > 0 && gap < 86400000) disconnectedMs += gap; // ignore >24h / negative
-        pendingLeave = null;
       }
+      pendingLeave = null;
     }
   }
 
