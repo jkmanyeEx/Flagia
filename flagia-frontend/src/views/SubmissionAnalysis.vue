@@ -309,6 +309,14 @@ const imeDominated = computed(() => {
   const ime = kd.filter(e => e.meta?.key === 'Process' || e.meta?.key === 'Unidentified').length
   return ime / kd.length > 0.5
 })
+// Newer submissions record periodic plain-text snapshots of the editor (every
+// ~2s on change). When present these are the source of truth for replay — they
+// reproduce exactly what was on screen, including composed Hangul, with no
+// fragile keystroke reconstruction. Older submissions have none and fall back
+// to the keystroke automaton below.
+const hasSnapshots = computed(() =>
+  events.value.some(e => e.type === 'snapshot' && typeof e.meta?.text === 'string')
+)
 function composeSyllable(cho: string, jung: string, jong: string): string {
   const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
   if (ci < 0 || ji < 0 || gi < 0) return (cho || '') + (jung || '') + (jong || '')
@@ -334,6 +342,50 @@ const replayState = computed(() => {
   }
 
   const thresholdTime = minTime.value + replayCurrentMs.value
+
+  // ── Snapshot replay (root fix): if the session recorded plain-text snapshots,
+  // show the most recent snapshot at or before the current replay time. This is
+  // exact for any script (Hangul, CJK, emoji) since it's the editor's real text.
+  // Keystroke/paste/blur counts and the activity log still come from the event
+  // stream so the metrics panel stays meaningful. ──
+  if (hasSnapshots.value) {
+    let text = templatePlain.value
+    let keystrokeCount = 0, pasteCount = 0, blurCount = 0
+    let activeStatus = '작성 중'
+    const logs: string[] = []
+    for (const e of events.value) {
+      if (e.timestamp > thresholdTime) break
+      const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
+      const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
+      if (e.type === 'snapshot' && typeof e.meta?.text === 'string') {
+        text = e.meta.text
+      } else if (e.type === 'keydown') {
+        const key = e.meta?.key
+        if (!(e.meta?.mod && key !== 'Backspace') && !(key && NON_CONTENT_KEYS.has(key))) keystrokeCount++
+      } else if (e.type === 'paste') {
+        pasteCount++; activeStatus = '작성 중'
+        logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`)
+      } else if (e.type === 'blur') {
+        blurCount++; activeStatus = '화면 이탈'
+        logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`)
+      } else if (e.type === 'focus') {
+        activeStatus = '작성 중'
+        logs.push(`[${timeStr}] ✏️ 에디터로 복귀`)
+      }
+    }
+    const kd = events.value.filter(e => e.type === 'keydown')
+    const recent = kd.filter(e => e.timestamp >= thresholdTime - 30000 && e.timestamp <= thresholdTime).length
+    return {
+      text,
+      cursorPos: text.length,
+      keystrokeCount,
+      pasteCount,
+      blurCount,
+      currentWpm: Math.round(recent / 2.5),
+      activeStatus,
+      logs: logs.slice(-15).reverse(),
+    }
+  }
 
   // ── IME-dominated session (Korean etc.): per-keystroke reconstruction is
   // impossible (every key is 'Process'), so reveal the final text progressively
@@ -380,7 +432,7 @@ const replayState = computed(() => {
       const bufText = renderBuf()
       committed = committed.slice(0, compStartPos) + bufText + committed.slice(compStartPos)
       compStartPos += bufText.length
-      if (pos >= compStartPos - bufText.length) {
+      if (!isV2 && pos >= compStartPos - bufText.length) {
         pos += bufText.length
       }
     }

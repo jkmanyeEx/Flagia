@@ -64,6 +64,8 @@ let lastKeyTime = 0
 let timerInterval: any = null
 let flushInterval: any = null
 let autoSaveInterval: any = null
+let snapshotInterval: any = null
+let lastSnapshotText = ''
 
 // Active-writing-time tracking. The countdown is a budget of *active* seconds
 // (assignment.time_limit minutes) that persists across sessions: leaving the
@@ -102,6 +104,35 @@ async function pushEvent(type: string, meta: any = {}) {
     type,
     meta,
     currentHash: hash,
+  })
+}
+
+// ── Plain-text snapshots (root fix for Korean/IME replay) ──
+// Reconstructing what was on screen from raw keystrokes is unreliable for
+// composed scripts (Hangul jamo combine into syllables via the IME, so the
+// keystroke stream doesn't map 1:1 to characters). Instead we periodically
+// record the editor's actual plain text. The replay prefers these snapshots
+// when present and falls back to the keystroke automaton for old submissions.
+// The engine ignores 'snapshot' events entirely, so this has no scoring impact.
+function stripHtml(html: string): string {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html || ''
+  return (tmp.textContent || tmp.innerText || '').replace(/ /g, ' ')
+}
+
+function captureSnapshot() {
+  if (isLocked.value || submitted.value) return
+  const text = stripHtml(content.value)
+  if (text === lastSnapshotText) return // only on change
+  lastSnapshotText = text
+  // Snapshots don't represent typing rhythm, so iki is irrelevant — set 0.
+  eventBuffer.push({
+    seq: ++sequenceCounter,
+    timestamp: Date.now(),
+    iki: 0,
+    type: 'snapshot',
+    meta: { text },
+    currentHash: '',
   })
 }
 
@@ -249,6 +280,7 @@ function handleTimeExpired() {
 async function submitEssay(forceClose = false) {
   if (submitting.value) return
   submitting.value = true
+  captureSnapshot()
   flushEvents()
   
   try {
@@ -281,6 +313,7 @@ function beaconSubmit() {
   if (submitted.value || !submission.value) return
   // Include any keystroke events that haven't been flushed over the WS yet, so
   // closing the tab mid-write doesn't lose the tail of the writing process.
+  captureSnapshot()
   const pending = eventBuffer.splice(0)
   const data = JSON.stringify({
     finalMarkdown: content.value,
@@ -353,6 +386,10 @@ onMounted(async () => {
 
     // Auto-save draft + elapsed time (every 15s)
     autoSaveInterval = setInterval(saveDraft, 15000)
+
+    // Plain-text snapshot for accurate replay (every 2s, only on change)
+    lastSnapshotText = stripHtml(content.value)
+    snapshotInterval = setInterval(captureSnapshot, 2000)
   } catch (err) {
     console.error('Init error:', err)
   } finally {
@@ -369,6 +406,8 @@ onBeforeUnmount(() => {
   clearInterval(timerInterval)
   clearInterval(flushInterval)
   clearInterval(autoSaveInterval)
+  clearInterval(snapshotInterval)
+  captureSnapshot()
   flushEvents()
   ws?.close()
   window.removeEventListener('beforeunload', beaconSubmit)
