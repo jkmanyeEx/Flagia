@@ -425,11 +425,27 @@ router.delete('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res
             res.status(403).json({ error: '본인이 만든 과제의 제출물만 삭제할 수 있습니다' });
             return;
         }
-        // Delete submission. Cascade deletes sessions
-        await database_1.default.query('DELETE FROM submissions WHERE id = ?', [req.params.id]);
+        // Delete all sessions for this submission
+        await database_1.default.query('DELETE FROM sessions WHERE submission_id = ?', [req.params.id]);
+        // Reset the submission fields back to ASSIGNED
+        await database_1.default.query(`UPDATE submissions SET
+         status = 'ASSIGNED',
+         final_markdown = NULL,
+         time_spent_sec = 0,
+         score = NULL,
+         feedback = NULL,
+         submitted_at = NULL,
+         flagia_score = NULL,
+         flag_status = NULL,
+         coefficient_of_variation = NULL,
+         revision_ratio = NULL,
+         total_paste_count = 0,
+         total_blur_duration = 0,
+         analysis_json = NULL
+       WHERE id = ?`, [req.params.id]);
         // Notify student and teacher of updates
         (0, websocket_1.notifySubmissionsUpdate)(sub.assignment_id, sub.student_id);
-        res.json({ message: '제출물이 삭제되었습니다' });
+        res.json({ message: '제출물이 초기화되었습니다' });
     }
     catch (err) {
         console.error('Delete submission error:', err);
