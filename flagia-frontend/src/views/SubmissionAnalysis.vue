@@ -570,7 +570,9 @@ function miniOffset(score: number) {
 }
 
 // Active Tab & Custom Tooltips
-const activeTab = ref<'report' | 'replay' | 'content'>('report')
+// Students never see the detailed report/replay (it would reveal the rubric),
+// so they land directly on the content/grade tab.
+const activeTab = ref<'report' | 'replay' | 'content'>(isStaff.value ? 'report' : 'content')
 
 // Grading states
 const score = ref<number | null>(null)
@@ -667,8 +669,12 @@ const backLabel = computed(() =>
 
     <!-- Tab Navigation -->
     <div class="flex items-center border-b border-border mb-6">
-      <button 
-        @click="activeTab = 'report'" 
+      <!-- Detailed analysis (component scores, metrics, verdict) is staff-only:
+           exposing the rubric to students would let them reverse-engineer and
+           game the engine. -->
+      <button
+        v-if="isStaff"
+        @click="activeTab = 'report'"
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'report' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
@@ -687,12 +693,12 @@ const backLabel = computed(() =>
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'content' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>📝</span> 본문 집중 분석 & 채점
+        <span>📝</span> {{ isStaff ? '본문 집중 분석 & 채점' : '제출 내용 & 평가' }}
       </button>
     </div>
 
-    <!-- TAB 1: Analysis Report -->
-    <div v-if="activeTab === 'report'" class="space-y-6">
+    <!-- TAB 1: Analysis Report (staff only) -->
+    <div v-if="activeTab === 'report' && isStaff" class="space-y-6">
       <!-- Hero Section: Score + Verdict -->
       <div v-if="analysis" class="card p-8">
         <div class="flex items-start gap-8">
@@ -991,7 +997,7 @@ const backLabel = computed(() =>
     </div>
 
     <!-- TAB 2: Playback Simulator Room -->
-    <div v-if="activeTab === 'replay'" class="space-y-6">
+    <div v-if="activeTab === 'replay' && isStaff" class="space-y-6">
       <div class="card p-6 bg-slate-50 border-primary-50">
         <div class="flex items-center justify-between mb-4 border-b border-border pb-3">
           <div>
@@ -1247,8 +1253,9 @@ const backLabel = computed(() =>
           </div>
         </div>
 
-        <!-- Integrity Overview Card -->
-        <div class="card p-6">
+        <!-- Integrity Overview Card — staff only. Showing these metrics to
+             students would reveal the rubric and invite gaming. -->
+        <div v-if="isStaff" class="card p-6">
           <h2 class="text-sm font-semibold text-text-primary mb-4">🛡️ 글쓰기 무결성 요약</h2>
           <div class="space-y-3 text-xs">
             <div class="flex justify-between items-center py-1.5 border-b border-border">
@@ -1278,6 +1285,15 @@ const backLabel = computed(() =>
               <strong class="text-text-primary">{{ analysis?.sessionSummary?.averageWPM || 0 }} WPM</strong>
             </div>
           </div>
+        </div>
+
+        <!-- Student: simple, non-revealing process note (no metrics/rubric) -->
+        <div v-if="!isStaff" class="card p-6">
+          <h2 class="text-sm font-semibold text-text-primary mb-3">✍️ 작성 과정 기록</h2>
+          <p class="text-xs text-text-secondary leading-relaxed">
+            제출이 정상적으로 완료되었으며, 작성 과정(타이핑 기록)이 안전하게 저장되었습니다.
+            상세 분석 결과는 담당 선생님만 확인할 수 있습니다.
+          </p>
         </div>
       </div>
     </div>

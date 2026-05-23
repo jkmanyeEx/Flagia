@@ -168,6 +168,11 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
             res.status(403).json({ error: '접근 권한이 없습니다' });
             return;
         }
+        // Students never receive the detailed analysis (component scores, metrics,
+        // weights, verdict). Exposing the rubric — even via the network tab — would
+        // let them reverse-engineer and game the engine. They only get their content
+        // + grade/feedback. Staff (teacher/admin) get the full breakdown.
+        const isStudent = user.role === 'STUDENT';
         // If cached analysis exists and is up to date (version 3), return it
         if (submission.analysis_json) {
             try {
@@ -191,7 +196,7 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
                             feedback: submission.feedback,
                             maxScore: submission.max_score,
                         },
-                        analysis: cached,
+                        analysis: isStudent ? null : cached,
                     });
                     return;
                 }
@@ -236,7 +241,7 @@ router.get('/:id/analysis', auth_1.authMiddleware, async (req, res) => {
                 feedback: submission.feedback,
                 maxScore: submission.max_score,
             },
-            analysis,
+            analysis: isStudent ? null : analysis,
         });
     }
     catch (err) {
