@@ -216,22 +216,28 @@ function getCvDescription(cv: number, finalScore: number, rhythmConfidence: numb
  * Typical human writing: RR ≈ 1.2-2.5 (edits, backspaces, corrections)
  */
 function scoreRevisionRatio(rr: number): number {
-  if (rr >= 1.2 && rr <= 2.5) return 100;
-  if (rr >= 1.1 && rr < 1.2) return 75;
-  if (rr > 2.5 && rr <= 3.5) return 80;
-  if (rr > 3.5 && rr <= 5.0) return 60;
-  if (rr < 1.1 && rr >= 1.0) return 50;
-  if (rr < 1.0) return 20;                       // Less keystrokes than chars = definite paste
-  return 40;                                      // rr > 5.0
+  // Genuine composition is MESSY: writers delete, rewrite, reorder, fix — so
+  // total keystrokes substantially exceed the final length (RR ≈ 1.6–3+).
+  // Copy-typing (reading text off-screen and transcribing it) is near-LINEAR:
+  // each character typed roughly once, almost no revision → RR ≈ 1.0–1.2.
+  // So a very low RR is a transcription signal, not "clean writing".
+  if (rr <= 0) return 50;                                              // no usable data
+  if (rr < 1.0) return 10;                                             // keystrokes < text → pasted
+  if (rr < 1.15) return Math.round(18 + ((rr - 1.0) / 0.15) * 14);     // 18→32  copy-typing zone
+  if (rr < 1.4)  return Math.round(32 + ((rr - 1.15) / 0.25) * 28);    // 32→60
+  if (rr < 1.6)  return Math.round(60 + ((rr - 1.4) / 0.2) * 40);      // 60→100
+  if (rr <= 3.0) return 100;                                           // healthy composition
+  if (rr <= 5.0) return Math.round(100 - ((rr - 3.0) / 2.0) * 40);     // 100→60
+  return Math.max(30, Math.round(60 - (rr - 5.0) * 8));                // >5 erratic
 }
 
 function getRrDescription(rr: number): string {
-  if (rr >= 1.2 && rr <= 2.5) return '적절한 수준의 수정과 편집이 이루어졌습니다. 글을 쓰면서 자연스럽게 내용을 다듬은 흔적이 보입니다.';
-  if (rr >= 1.1 && rr < 1.2) return '수정이 거의 없이 한 번에 작성된 것으로 보입니다. 사전에 다른 곳에서 글을 준비했을 수 있습니다.';
-  if (rr > 2.5 && rr <= 3.5) return '평균보다 많은 수정이 있었습니다. 글을 신중하게 다듬은 것으로 판단됩니다.';
-  if (rr > 3.5 && rr <= 5.0) return '상당한 양의 수정 작업이 관찰됩니다. 글의 구조를 크게 변경하며 작성한 것으로 보입니다.';
-  if (rr < 1.1 && rr >= 1.0) return '키 입력 수가 최종 텍스트 길이와 거의 같습니다. 이미 완성된 글을 단순히 옮겨 적었을 가능성이 높습니다.';
   if (rr < 1.0) return '키 입력 수가 최종 텍스트 길이보다 적습니다. 붙여넣기를 통해 대부분의 내용이 입력되었습니다.';
+  if (rr < 1.15) return '수정 흔적이 거의 없이 최종 글이 사실상 한 번에 그대로 입력되었습니다. 직접 구상하며 쓴 글은 보통 더 많은 삭제·재작성을 동반하므로, 외부의 글을 보며 그대로 옮겨 친(베껴 쓰기) 정황이 의심됩니다.';
+  if (rr < 1.4) return '수정·편집 활동이 평균보다 현저히 적습니다. 자연스러운 작문 과정이라기보다 미리 준비된 텍스트를 옮겨 적었을 가능성이 있습니다.';
+  if (rr < 1.6) return '다소 적은 수준의 수정이 있었습니다. 비교적 정돈된 작성 과정입니다.';
+  if (rr <= 3.0) return '적절한 수준의 수정과 편집이 이루어졌습니다. 글을 쓰면서 자연스럽게 내용을 다듬은 흔적이 보입니다.';
+  if (rr <= 5.0) return '상당한 양의 수정 작업이 관찰됩니다. 글의 구조를 크게 변경하며 작성한 것으로 보입니다.';
   return '매우 많은 수정이 있었습니다. 글을 반복적으로 재작성한 것으로 보입니다.';
 }
 
@@ -691,6 +697,21 @@ export function runFlagiaAnalysis(
     blurScore * weights.blurWeight +
     timeScore * weights.timeWeight;
 
+  // ── Linear-transcription (copy-typing) structural override ──
+  // The hardest cheat: read AI text off a second screen and type it by hand.
+  // The keystrokes are genuinely human, so Cv/rhythm look fine and there's no
+  // paste — the weighted sum stays green. But a SUBSTANTIAL, polished text typed
+  // almost verbatim (very low revision) is the transcription signature: real
+  // composition is messy (deletes/rewrites → higher RR). When that pattern holds
+  // and nothing meaningful was pasted, scale the whole score down so it can no
+  // longer pass on healthy rhythm alone. Threshold (RR<1.5, len≥200) is tunable.
+  const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
+  let transcriptionSeverity = 0;
+  if (effectiveTextLength >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.5 && pastedShare < 0.15) {
+    transcriptionSeverity = Math.min(1, (1.5 - revisionRatio) / 0.5); // RR 1.5→0 … 1.0→1
+    flagiaScore = flagiaScore * (1 - 0.5 * transcriptionSeverity);    // up to 50% reduction
+  }
+
   flagiaScore = Math.round(Math.max(0, Math.min(100, flagiaScore)) * 100) / 100;
 
   // ── Flag Status ──
@@ -780,12 +801,15 @@ export function runFlagiaAnalysis(
   };
 
   // ── Verdict ──
-  const { verdict, verdictDetail } = generateVerdict(
+  let { verdict, verdictDetail } = generateVerdict(
     flagiaScore,
     flagStatus,
     { cv: cvScore, rr: rrScore, paste: pasteScore, blur: blurScore, time: timeScore },
     mode
   );
+  if (transcriptionSeverity > 0.4) {
+    verdictDetail += ` ⚠️ 충분한 분량의 글이 거의 수정 없이 한 번에 입력되었습니다(수정 비율 ${revisionRatio.toFixed(2)}). 타이핑 리듬은 사람과 유사하더라도, 이는 외부 화면의 글을 보며 손으로 그대로 옮겨 쓴(베껴 쓰기) 경우의 전형적 패턴입니다. 직접 확인이 필요합니다.`;
+  }
 
   return {
     version: 3,
