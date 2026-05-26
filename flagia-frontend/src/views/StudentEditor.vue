@@ -448,8 +448,10 @@ onMounted(async () => {
       return
     }
 
-    // Set initial content
-    content.value = submission.value.final_markdown || assignment.value.template_text || ''
+    // Set initial content. The template is shown in the read-only left pane, so
+    // the writing field starts EMPTY (only a saved draft repopulates it) rather
+    // than being pre-filled with the template.
+    content.value = submission.value.final_markdown || ''
 
     // Connect WS
     connectWS()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
 import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
@@ -8,7 +8,6 @@ import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
 const API = resolveApiBase()
 const WS_URL = resolveWsUrl()
 const router = useRouter()
-const route = useRoute()
 const { user, token } = useAuth()
 
 const assignments = ref<any[]>([])
@@ -150,22 +149,9 @@ function getDday(dueDate: string) {
   return { text: '마감됨', class: 'dday-passed', val: -1 }
 }
 
-// Filtering & Sorting
+// Filtering & Sorting (local state only — no URL query binding)
 const filterStatus = ref('ALL') // ALL, NOT_STARTED, IN_PROGRESS, SUBMITTED
 const sortBy = ref('DUE_DATE') // DUE_DATE, NEWEST
-
-// Sync filter from route query param (e.g., /student?filter=IN_PROGRESS)
-const validFilters = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'SUBMITTED']
-if (route.query.filter && validFilters.includes(route.query.filter as string)) {
-  filterStatus.value = route.query.filter as string
-}
-watch(() => route.query.filter, (newFilter) => {
-  if (newFilter && validFilters.includes(newFilter as string)) {
-    filterStatus.value = newFilter as string
-  } else if (!newFilter) {
-    filterStatus.value = 'ALL'
-  }
-})
 
 const filteredAssignments = computed(() => {
   let list = assignments.value.filter(a => {
