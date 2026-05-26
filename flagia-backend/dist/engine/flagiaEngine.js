@@ -580,9 +580,15 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             }
         }
     }
-    const effectiveTextLength = Math.max(1, plainText.length - preservedTemplateLength);
     // Calculate expected keystrokes normalized for language (specifically Korean Hangul)
     const totalExpectedKeystrokes = getExpectedKeystrokeCount(plainText);
+    const totalKeydowns = events.filter((e) => e.type === 'keydown').length;
+    const isTemplateDominated = plainText.length > 0 && (preservedTemplateLength / plainText.length) > 0.8;
+    const isSubstantiallyTyped = totalKeydowns > 0.5 * totalExpectedKeystrokes;
+    const shouldSubtractTemplate = !(isTemplateDominated && isSubstantiallyTyped);
+    const effectiveTextLength = shouldSubtractTemplate
+        ? Math.max(1, plainText.length - preservedTemplateLength)
+        : Math.max(1, plainText.length);
     const effectiveExpectedKeystrokes = plainText.length > 0
         ? Math.max(1, Math.round(totalExpectedKeystrokes * (effectiveTextLength / plainText.length)))
         : 1;
@@ -596,7 +602,6 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         .map((e) => e.iki);
     const cv = computeCv(ikiValues);
     // ── Revision Ratio: total keydown count / effective expected keystrokes ──
-    const totalKeydowns = events.filter((e) => e.type === 'keydown').length;
     const revisionRatio = effectiveExpectedKeystrokes > 0
         ? totalKeydowns / effectiveExpectedKeystrokes
         : 0;
