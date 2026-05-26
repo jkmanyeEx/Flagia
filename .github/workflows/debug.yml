@@ -103,8 +103,8 @@ jobs:
               echo "mysql client or DB secrets unavailable; skipping."
             else
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME -t"
-              echo "--- TARGET SUBMISSION: ce65d9dc overview ---"
-              $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, submitted_at FROM submissions WHERE id = 'ce65d9dc-a7de-45dc-8292-e3c27f5622ef';" || true
+              echo "--- ALL SUBMISSIONS IN DB ---"
+              $MYSQL -e "SELECT s.id, s.status, s.flagia_score AS score, s.flag_status AS flag, u.email FROM submissions s JOIN users u ON s.student_id = u.id ORDER BY s.created_at DESC;" || true
               echo "--- TARGET SUBMISSION: ce65d9dc events/sessions ---"
               $MYSQL -e "SELECT COUNT(*) AS sessions, SUM(JSON_LENGTH(events_blob)) AS total_events FROM sessions WHERE submission_id = 'ce65d9dc-a7de-45dc-8292-e3c27f5622ef';" || true
               echo "--- TARGET SUBMISSION: ce65d9dc components scores ---"
