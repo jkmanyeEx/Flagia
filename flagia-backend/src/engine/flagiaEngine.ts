@@ -545,6 +545,51 @@ function analyzePauseAlignment(events: TelemetryEvent[]): PauseAlignment {
 }
 
 /**
+ * Calculate expected keystroke count normalized for language (specifically Korean Hangul)
+ */
+function getExpectedKeystrokeCount(text: string): number {
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const code = char.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      // Hangul Syllable
+      const offset = code - 0xAC00;
+      const jungIdx = Math.floor((offset % 588) / 28);
+      const jongIdx = offset % 28;
+      
+      let keystrokes = 1; // Initial consonant (choseong) is 1 keystroke
+      
+      // jungseong: compound vowels require 2 keystrokes
+      if ([9, 10, 11, 14, 15, 16, 19].includes(jungIdx)) {
+        keystrokes += 2;
+      } else {
+        keystrokes += 1;
+      }
+      
+      // jongseong: if present, check if compound (2 keystrokes) or single (1 keystroke)
+      if (jongIdx > 0) {
+        if ([3, 5, 6, 9, 10, 11, 12, 13, 14, 15, 18].includes(jongIdx)) {
+          keystrokes += 2;
+        } else {
+          keystrokes += 1;
+        }
+      }
+      count += keystrokes;
+    } else if (code >= 0x3131 && code <= 0x318E) {
+      // Compatibility Jamo (typically typed as 1 keystroke)
+      count += 1;
+    } else if (char === '\r') {
+      continue;
+    } else {
+      // All other characters (ASCII, Latin, spaces, punctuation, etc.)
+      count += 1;
+    }
+  }
+  return Math.max(1, count);
+}
+
+/**
  * Main analysis function
  */
 export function runFlagiaAnalysis(
@@ -586,6 +631,12 @@ export function runFlagiaAnalysis(
 
   const effectiveTextLength = Math.max(1, plainText.length - preservedTemplateLength);
 
+  // Calculate expected keystrokes normalized for language (specifically Korean Hangul)
+  const totalExpectedKeystrokes = getExpectedKeystrokeCount(plainText);
+  const effectiveExpectedKeystrokes = plainText.length > 0
+    ? Math.max(1, Math.round(totalExpectedKeystrokes * (effectiveTextLength / plainText.length)))
+    : 1;
+
   // ── IKI values: only CONTENT keydown events with valid IKI ──
   // Modifier and navigation keys (Shift, Meta, arrows, Backspace…) are not
   // typing rhythm — filtering them out keeps a paste followed by Ctrl/Meta+V
@@ -599,10 +650,10 @@ export function runFlagiaAnalysis(
 
   const cv = computeCv(ikiValues);
 
-  // ── Revision Ratio: total keydown count / effective text length ──
+  // ── Revision Ratio: total keydown count / effective expected keystrokes ──
   const totalKeydowns = events.filter((e) => e.type === 'keydown').length;
-  const revisionRatio = effectiveTextLength > 0 
-    ? totalKeydowns / effectiveTextLength 
+  const revisionRatio = effectiveExpectedKeystrokes > 0 
+    ? totalKeydowns / effectiveExpectedKeystrokes 
     : 0;
 
   // ── Paste Detection (count + total volume) ──
@@ -639,8 +690,8 @@ export function runFlagiaAnalysis(
   // of the final text was actually typed (not pasted). Scale toward a low
   // floor when the sample is too small or content-keystrokes ≪ final text.
   const sampleConfidence = Math.min(1, ikiValues.length / 30);
-  const contentConfidence = effectiveTextLength > 0
-    ? Math.min(1, contentKeydowns.length / effectiveTextLength)
+  const contentConfidence = effectiveExpectedKeystrokes > 0
+    ? Math.min(1, contentKeydowns.length / effectiveExpectedKeystrokes)
     : 0;
   const rhythmConfidence = Math.min(sampleConfidence, contentConfidence);
   const RHYTHM_FLOOR = 5;
