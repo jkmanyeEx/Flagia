@@ -23,12 +23,14 @@ on:
         type: choice
         options:
           - delete-user
+          - clear-template-drafts
       query:
-        description: 'Account to target — exact email OR a name to search (e.g. 양석훈)'
-        required: true
+        description: 'delete-user only: exact email OR a name to search (e.g. 양석훈). Ignored by clear-template-drafts.'
+        required: false
+        default: ''
         type: string
       confirm:
-        description: 'Type DELETE to actually delete. Leave blank for a dry-run (find only).'
+        description: 'delete-user: type DELETE. clear-template-drafts: type CLEAR. Blank = dry-run.'
         required: false
         default: ''
         type: string
@@ -98,6 +100,34 @@ jobs:
             $MYSQL -e "DELETE FROM users WHERE id='$UID_TO_DEL';"
             echo "Deleted. Verifying it's gone:"
             $MYSQLT -e "SELECT COUNT(*) AS remaining FROM users WHERE id='$UID_TO_DEL';"
+          fi
+
+          if [ "$ACTION" = "clear-template-drafts" ]; then
+            # Null out final_markdown for not-yet-submitted drafts whose content is
+            # JUST the (untouched) assignment template — these are old seeds from
+            # before the editor stopped pre-filling the template. Compares NORMALIZED
+            # visible text (strip tags, &nbsp;→space, collapse whitespace) so TipTap's
+            # re-serialization of the seed still matches; a student who added anything
+            # real no longer matches and is left untouched.
+            NS="TRIM(REGEXP_REPLACE(REPLACE(REGEXP_REPLACE(s.final_markdown,'<[^>]*>',''),'&nbsp;',' '),'[[:space:]]+',' '))"
+            NA="TRIM(REGEXP_REPLACE(REPLACE(REGEXP_REPLACE(a.template_text,'<[^>]*>',''),'&nbsp;',' '),'[[:space:]]+',' '))"
+            WHERE="s.status IN ('ASSIGNED','IN_PROGRESS') AND s.final_markdown IS NOT NULL AND s.final_markdown<>'' AND a.template_text IS NOT NULL AND a.template_text<>'' AND $NS = $NA"
+
+            echo "===== DRAFTS THAT ARE JUST THE UNTOUCHED TEMPLATE ====="
+            $MYSQLT -e "SELECT LEFT(s.id,8) AS id, s.status, LENGTH(s.final_markdown) AS md_len, LEFT(s.student_id,8) AS student, LEFT(a.title,24) AS assignment FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE $WHERE ORDER BY s.created_at DESC;"
+            CNT="$($MYSQL -N -e "SELECT COUNT(*) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE $WHERE;")"
+            echo ""
+            echo "Matches: $CNT"
+
+            if [ "${CONFIRM:-}" != "CLEAR" ]; then
+              echo "DRY-RUN: confirm was not 'CLEAR', nothing changed."
+              echo "Re-run with confirm=CLEAR to null these drafts (students start from an empty editor)."
+            elif [ "$CNT" -eq 0 ]; then
+              echo "Nothing to clear."
+            else
+              $MYSQL -e "UPDATE submissions s JOIN assignments a ON s.assignment_id=a.id SET s.final_markdown=NULL WHERE $WHERE;"
+              echo "Cleared $CNT template-only draft(s): final_markdown set to NULL."
+            fi
           fi
 
           echo ""
