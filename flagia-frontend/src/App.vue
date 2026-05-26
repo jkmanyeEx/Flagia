@@ -48,8 +48,6 @@ const activeNav = computed(() => {
   if (n === 'classrooms' || n === 'classroom-detail') return 'classrooms'
   if (n === 'teacher') return 'teacher-dash'
   if (n === 'student-home') {
-    if (route.query.filter === 'IN_PROGRESS') return 'student-inprogress'
-    if (route.query.filter === 'SUBMITTED') return 'student-submitted'
     return 'student-all'
   }
   // /dashboard redirects by role; reflect where it lands.
@@ -124,15 +122,7 @@ const roleLabel = computed(() =>
         <template v-if="user?.role === 'STUDENT' || user?.role === 'ADMIN'">
           <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-all' }">
             <span class="item-icon">📋</span>
-            <span class="item-label">{{ user?.role === 'ADMIN' ? '내 과제 (학생용)' : '전체 과제 목록' }}</span>
-          </button>
-          <button @click="router.push('/student?filter=IN_PROGRESS')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-inprogress' }">
-            <span class="item-icon">✏️</span>
-            <span class="item-label">진행 중인 과제</span>
-          </button>
-          <button @click="router.push('/student?filter=SUBMITTED')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-submitted' }">
-            <span class="item-icon">📁</span>
-            <span class="item-label">제출 완료 목록</span>
+            <span class="item-label">{{ user?.role === 'ADMIN' ? '내 과제 (학생용)' : '과제' }}</span>
           </button>
         </template>
 
