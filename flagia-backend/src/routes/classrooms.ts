@@ -131,6 +131,31 @@ router.post('/join/:code', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
+// DELETE /api/classrooms/:id/leave — student/admin leaves a joined classroom
+router.delete('/:id/leave', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== 'STUDENT' && user.role !== 'ADMIN') {
+      res.status(403).json({ error: '학생만 학급을 탈퇴할 수 있습니다' });
+      return;
+    }
+
+    const [result]: any = await pool.query(
+      'DELETE FROM classroom_members WHERE classroom_id = ? AND student_id = ?',
+      [req.params.id, user.userId]
+    );
+    if (result.affectedRows === 0) {
+      res.status(404).json({ error: '해당 학급에 참여하고 있지 않습니다' });
+      return;
+    }
+
+    res.json({ message: '학급에서 탈퇴했습니다' });
+  } catch (err) {
+    console.error('Leave classroom error:', err);
+    res.status(500).json({ error: '학급 탈퇴 중 오류가 발생했습니다' });
+  }
+});
+
 // GET /api/classrooms/:id — detail (owner teacher or member) + members + assignments
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
