@@ -101,6 +101,7 @@ router.post('/join/:code', auth_1.authMiddleware, async (req, res) => {
         const [existing] = await database_1.default.query('SELECT id FROM classroom_members WHERE classroom_id = ? AND student_id = ?', [classroomId, user.userId]);
         if (existing.length === 0) {
             await database_1.default.query('INSERT INTO classroom_members (id, classroom_id, student_id) VALUES (?, ?, ?)', [(0, uuid_1.v4)(), classroomId, user.userId]);
+            (0, websocket_1.notifyClassroomMembersUpdate)(classroomId);
         }
         res.json({ message: '학급에 참여했습니다', classroomId });
     }
@@ -122,6 +123,7 @@ router.delete('/:id/leave', auth_1.authMiddleware, async (req, res) => {
             res.status(404).json({ error: '해당 학급에 참여하고 있지 않습니다' });
             return;
         }
+        (0, websocket_1.notifyClassroomMembersUpdate)(req.params.id);
         res.json({ message: '학급에서 탈퇴했습니다' });
     }
     catch (err) {

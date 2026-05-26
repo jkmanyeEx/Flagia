@@ -936,16 +936,42 @@ export function runFlagiaAnalysis(
   // AND the student actually typed (>50% of expected keystrokes). This
   // combination is uniquely the template copy-typing signature — a student
   // who left the template untouched would have very few keydowns.
-  if (transcriptionSeverity === 0 && isTemplateDominated && isSubstantiallyTyped
+  //
+  // Two tiers:
+  //   A. Pure copy-typing:  >80% of final text IS the template AND student
+  //      typed substantially → hardest penalty.
+  //   B. Mixed copy-typing: template is >30% of final text, >80% of the
+  //      template is preserved, AND total keydowns are >3× the expected
+  //      keystrokes for just the non-template portion → the "excess"
+  //      keydowns can only be explained by the student also having typed
+  //      the pre-populated template. Penalty scales with template coverage.
+  const templatePreservationRate = plainTemplate.length > 0
+    ? preservedTemplateLength / plainTemplate.length : 0;
+  if (transcriptionSeverity === 0 && preservedTemplateLength >= 200
       && plainText.length >= 200 && pastedShare < 0.15) {
-    transcriptionSeverity = preservedTemplateLength / plainText.length; // 0.8–1.0
-    const penaltyFactor = 0.75 * transcriptionSeverity;
-    let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
-    penalized = Math.min(penalized, 38); // Hard cap → RED
-    const delta = Math.round((penalized - baseScore) * 100) / 100;
-    if (delta < 0) {
-      scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점 — 제시문 그대로 타이핑', points: delta });
-      flagiaScore = penalized;
+    const templateCoverage = preservedTemplateLength / plainText.length;
+
+    if (templateCoverage > 0.8 && isSubstantiallyTyped) {
+      // Tier A: template dominates the final text → classic copy-typing
+      transcriptionSeverity = templateCoverage;
+    } else if (templateCoverage > 0.3 && templatePreservationRate > 0.8
+               && effectiveExpectedKeystrokes > 0
+               && totalKeydowns > effectiveExpectedKeystrokes * 3.0) {
+      // Tier B: significant template preserved + keydowns far exceed what's
+      // needed for original writing → student typed the template too
+      transcriptionSeverity = templateCoverage;
+    }
+
+    if (transcriptionSeverity > 0) {
+      const penaltyFactor = 0.75 * transcriptionSeverity;
+      let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
+      if (transcriptionSeverity > 0.7) penalized = Math.min(penalized, 38);
+      else if (transcriptionSeverity > 0.4) penalized = Math.min(penalized, 45);
+      const delta = Math.round((penalized - baseScore) * 100) / 100;
+      if (delta < 0) {
+        scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점 — 제시문 그대로 타이핑', points: delta });
+        flagiaScore = penalized;
+      }
     }
   }
 

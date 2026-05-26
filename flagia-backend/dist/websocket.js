@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notifySubmissionsUpdate = notifySubmissionsUpdate;
 exports.notifyAssignmentsUpdate = notifyAssignmentsUpdate;
+exports.notifyClassroomMembersUpdate = notifyClassroomMembersUpdate;
 exports.initWebSocket = initWebSocket;
 const ws_1 = require("ws");
 const uuid_1 = require("uuid");
@@ -42,6 +43,16 @@ function notifyAssignmentsUpdate() {
             client.ws.send(JSON.stringify({
                 type: 'assignments_update',
                 payload: {}
+            }));
+        }
+    }
+}
+function notifyClassroomMembersUpdate(classroomId) {
+    for (const client of clients.values()) {
+        if (client.classroomId === classroomId && client.ws.readyState === ws_1.WebSocket.OPEN) {
+            client.ws.send(JSON.stringify({
+                type: 'classroom_members_update',
+                payload: { classroomId }
             }));
         }
     }
@@ -181,6 +192,13 @@ function initWebSocket(server) {
                         if (!clientState || clientState.user.role !== 'TEACHER')
                             break;
                         clientState.assignmentId = payload.assignmentId;
+                        break;
+                    }
+                    // ── Join classroom room for student list live refresh ──
+                    case 'join_classroom': {
+                        if (!clientState)
+                            break;
+                        clientState.classroomId = payload.classroomId;
                         break;
                     }
                     // ── Student: timer expired, auto-submit ──
