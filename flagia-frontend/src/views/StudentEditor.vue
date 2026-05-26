@@ -25,7 +25,6 @@ const wsConnected = ref(false)
 const submitting = ref(false)
 
 const showSubmitModal = ref(false)
-const showTemplateView = ref(false)
 const bypassLeaveGuard = ref(false)
 
 // Timer
@@ -45,7 +44,7 @@ const timerDanger = computed(() => {
 // Text stats
 const wordCount = computed(() => {
   const text = stripHtml(content.value).trim()
-  return text.length
+  return countGraphemes(text)
 })
 const readingTime = computed(() => {
   const wpm = 200 // Korean characters per minute
@@ -55,6 +54,10 @@ const readingTime = computed(() => {
 
 // Rendered html (Not needed for rich text editor, but kept for compatibility if needed elsewhere, though we now edit HTML directly)
 const renderedHtml = computed(() => content.value)
+
+// Whether the assignment ships a guideline template. When present we show it in a
+// read-only left pane beside the editor; when absent the editor is full-width.
+const hasTemplate = computed(() => !!stripHtml(assignment.value?.template_text || '').trim())
 
 // ── Telemetry ──
 let ws: WebSocket | null = null
@@ -114,6 +117,21 @@ async function pushEvent(type: string, meta: any = {}) {
 // record the editor's actual plain text. The replay prefers these snapshots
 // when present and falls back to the keystroke automaton for old submissions.
 // The engine ignores 'snapshot' events entirely, so this has no scoring impact.
+// Count user-perceived characters (graphemes) so a multi-codepoint emoji counts
+// as 1 — not 2+ as String.length (which counts UTF-16 code units) would report.
+const _graphemeSeg = typeof Intl !== 'undefined' && (Intl as any).Segmenter
+  ? new (Intl as any).Segmenter('ko', { granularity: 'grapheme' })
+  : null
+function countGraphemes(text: string): number {
+  if (!text) return 0
+  if (_graphemeSeg) {
+    let n = 0
+    for (const _ of _graphemeSeg.segment(text)) n++
+    return n
+  }
+  return [...text].length // fallback: code points (still fixes surrogate pairs)
+}
+
 function stripHtml(html: string): string {
   return (html || '')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -216,14 +234,35 @@ function handleKeydown(e: KeyboardEvent, selection?: { cursor: number; selection
   })
 }
 
+// Snippets the student copied/cut from THIS page (editor or template pane) this
+// session. Pasting one of these back in is legitimate (moving/duplicating their
+// own text or quoting the provided template), so such pastes are tagged
+// `internal` and excluded from the external-content score by the engine.
+let copiedSnippets: string[] = []
+function normalizeClip(s: string): string {
+  return (s || '').replace(/\s+/g, ' ').trim()
+}
+function handleCopyCut() {
+  const sel = normalizeClip(window.getSelection?.()?.toString() ?? '')
+  if (sel.length < 2) return
+  copiedSnippets.push(sel)
+  if (copiedSnippets.length > 50) copiedSnippets.shift() // bound memory
+}
+
 function handlePaste(e: ClipboardEvent, selection?: { cursor: number; selectionLength: number }) {
   if (isLocked.value) { e.preventDefault(); return }
   const text = e.clipboardData?.getData('text') || ''
-  pushEvent('paste', { 
+  // Legal if the pasted text was copied from somewhere on this page this session.
+  const norm = normalizeClip(text)
+  const internal = norm.length >= 2 && copiedSnippets.some(
+    s => s === norm || s.includes(norm) || norm.includes(s)
+  )
+  pushEvent('paste', {
     pasteLength: text.length,
     pasteContent: text,
     cursorPosition: selection?.cursor ?? 0,
     selectionLength: selection?.selectionLength ?? 0,
+    internal,
     v: 2,
   })
 }
@@ -378,13 +417,6 @@ async function saveDraft() {
   } catch { /* noop */ }
 }
 
-// Save the draft and return to the assignment list cleanly (resume later).
-async function saveAndExit() {
-  await saveDraft()
-  bypassLeaveGuard.value = true
-  router.push('/student')
-}
-
 // ── Split pane drag ──
 // Removed
 
@@ -442,6 +474,8 @@ onMounted(async () => {
   window.addEventListener('blur', handleWindowBlur)
   window.addEventListener('focus', handleWindowFocus)
   document.addEventListener('visibilitychange', handleVisibility)
+  document.addEventListener('copy', handleCopyCut)
+  document.addEventListener('cut', handleCopyCut)
 })
 
 onBeforeUnmount(() => {
@@ -456,6 +490,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('blur', handleWindowBlur)
   window.removeEventListener('focus', handleWindowFocus)
   document.removeEventListener('visibilitychange', handleVisibility)
+  document.removeEventListener('copy', handleCopyCut)
+  document.removeEventListener('cut', handleCopyCut)
 })
 
 onBeforeRouteLeave(() => {
@@ -530,16 +566,6 @@ async function confirmSubmit() {
           {{ timerDisplay }}
         </div>
 
-        <!-- View the original guideline template -->
-        <button @click="showTemplateView = true" class="btn btn-ghost btn-sm">
-          📄 템플릿 보기
-        </button>
-
-        <!-- Save & return to list (resume later) -->
-        <button @click="saveAndExit" class="btn btn-outline btn-sm" :disabled="submitting">
-          저장하고 과제 목록으로
-        </button>
-
         <!-- Submit -->
         <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="submitting || wordCount === 0">
           <svg v-if="submitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -548,50 +574,47 @@ async function confirmSubmit() {
       </div>
     </div>
 
-    <!-- Split Pane Editor Removed, Single Pane Rich Text Editor instead -->
+    <!-- Editor area: read-only template pane (left, only when a template exists) + editor (right) -->
     <div class="flex-1 p-4 lg:px-8 pb-8 overflow-hidden bg-background">
-      <div class="max-w-4xl mx-auto h-full" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 0.5rem;">
-        <RichTextEditor
-          v-model="content"
-          :disabled="isLocked"
-          placeholder="여기에 글을 작성하세요..."
-          @keydown="(e, selection) => handleKeydown(e, selection)"
-          @paste="(e, selection) => handlePaste(e, selection)"
-        />
-        
-        <!-- Text stats & limit warning -->
-        <div class="mt-3 flex items-center justify-between">
-          <div class="flex items-center gap-3 text-xs text-text-muted">
-            <span>{{ wordCount.toLocaleString() }}자</span>
-            <span v-if="assignment?.text_limit" :class="wordCount > assignment.text_limit ? 'text-danger font-semibold' : ''">
-              / {{ assignment.text_limit.toLocaleString() }}
-            </span>
-            <span>·</span>
-            <span>{{ readingTime }}분 읽기</span>
+      <div class="max-w-6xl mx-auto h-full flex flex-col lg:flex-row gap-4">
+        <!-- Template pane (read-only reference) -->
+        <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-2/5">
+          <div class="text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1">
+            📄 과제 템플릿 · 읽기 전용
           </div>
-          <div v-if="assignment?.text_limit && wordCount > assignment.text_limit" class="text-xs text-danger font-medium flex items-center gap-1">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
+          <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5 bg-white"
+               style="box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+            <div class="markdown-body ProseMirror" v-html="assignment?.template_text"></div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Template View Modal (read-only original guideline) -->
-    <div v-if="showTemplateView" class="modal-overlay" @click.self="showTemplateView = false">
-      <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
-        <div class="flex items-start justify-between mb-4 flex-shrink-0">
-          <div>
-            <h3 class="text-xl font-bold">과제 템플릿</h3>
-            <p class="text-xs text-text-muted mt-0.5">선생님이 제공한 원본 가이드라인입니다. (읽기 전용)</p>
+        <!-- Editor pane -->
+        <div class="flex-1 flex flex-col min-h-0">
+          <div class="flex-1 min-h-0" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 0.5rem; overflow: hidden;">
+            <RichTextEditor
+              v-model="content"
+              :disabled="isLocked"
+              placeholder="여기에 글을 작성하세요..."
+              @keydown="(e, selection) => handleKeydown(e, selection)"
+              @paste="(e, selection) => handlePaste(e, selection)"
+            />
           </div>
-          <button @click="showTemplateView = false" class="btn btn-ghost btn-xs">✕</button>
-        </div>
-        <div class="border border-border rounded-lg p-6 max-h-[65vh] overflow-y-auto bg-white shadow-inner flex-1">
-          <div class="markdown-body ProseMirror" v-html="assignment?.template_text || '<p>(템플릿이 없습니다)</p>'"></div>
-        </div>
-        <div class="flex justify-end pt-4 mt-2 border-t border-border">
-          <button @click="showTemplateView = false" class="btn btn-primary">닫기</button>
+
+          <!-- Text stats & limit warning -->
+          <div class="mt-3 flex items-center justify-between">
+            <div class="flex items-center gap-3 text-xs text-text-muted">
+              <span>{{ wordCount.toLocaleString() }}자</span>
+              <span v-if="assignment?.text_limit" :class="wordCount > assignment.text_limit ? 'text-danger font-semibold' : ''">
+                / {{ assignment.text_limit.toLocaleString() }}
+              </span>
+              <span>·</span>
+              <span>{{ readingTime }}분 읽기</span>
+            </div>
+            <div v-if="assignment?.text_limit && wordCount > assignment.text_limit" class="text-xs text-danger font-medium flex items-center gap-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
+            </div>
+          </div>
         </div>
       </div>
     </div>

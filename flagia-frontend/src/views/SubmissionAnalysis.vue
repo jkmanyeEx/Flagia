@@ -367,8 +367,13 @@ const replayState = computed(() => {
         const key = e.meta?.key
         if (!(e.meta?.mod && key !== 'Backspace') && !(key && NON_CONTENT_KEYS.has(key))) keystrokeCount++
       } else if (e.type === 'paste') {
-        pasteCount++; activeStatus = '작성 중'
-        logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`)
+        activeStatus = '작성 중'
+        if (e.meta?.internal) {
+          logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${e.meta?.pasteLength || 0}자)`)
+        } else {
+          pasteCount++
+          logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`)
+        }
       } else if (e.type === 'blur') {
         blurCount++; activeStatus = '화면 이탈'
         logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`)
@@ -407,7 +412,10 @@ const replayState = computed(() => {
       if (e.timestamp > thresholdTime) break
       const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
       const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
-      if (e.type === 'paste') { pasteCount++; logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`) }
+      if (e.type === 'paste') {
+        if (e.meta?.internal) { logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${e.meta?.pasteLength || 0}자)`) }
+        else { pasteCount++; logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`) }
+      }
       else if (e.type === 'blur') { blurCount++; activeStatus = '화면 이탈'; logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`) }
       else if (e.type === 'focus') { activeStatus = '작성 중 (한글 입력)'; logs.push(`[${timeStr}] ✏️ 에디터로 복귀`) }
     }
@@ -687,7 +695,6 @@ const replayState = computed(() => {
       // Modifier / navigation keys: ignored (no buffer change).
     } else if (e.type === 'paste') {
       flushBuf()
-      pasteCount++
       const len = e.meta?.pasteLength || 0
       const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
 
@@ -698,7 +705,12 @@ const replayState = computed(() => {
 
       committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
       pos += pastedText.length
-      logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
+      if (e.meta?.internal) {
+        logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${len}자)`)
+      } else {
+        pasteCount++
+        logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
+      }
     } else if (e.type === 'blur') {
       flushBuf()
       blurCount++

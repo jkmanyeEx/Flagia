@@ -33,7 +33,17 @@ function captureSelection(view: any) {
 
 const editor = useEditor({
   extensions: [
-    StarterKit,
+    // Lists, horizontal rule and blockquote are disabled (plain prose only), and
+    // the bundled Link extension is turned off so typed/pasted URLs stay as plain
+    // text instead of becoming clickable hyperlinks.
+    StarterKit.configure({
+      bulletList: false,
+      orderedList: false,
+      listItem: false,
+      horizontalRule: false,
+      blockquote: false,
+      link: false,
+    }),
     Placeholder.configure({
       placeholder: props.placeholder || '내용을 입력하세요...',
     }),
@@ -116,20 +126,6 @@ onBeforeUnmount(() => {
       </button>
       <button type="button" @click="editor.chain().focus().toggleHeading({ level: 3 }).run()" :class="{ 'is-active': editor.isActive('heading', { level: 3 }) }">
         H3
-      </button>
-      <div class="divider"></div>
-      <button type="button" @click="editor.chain().focus().toggleBulletList().run()" :class="{ 'is-active': editor.isActive('bulletList') }">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      </button>
-      <button type="button" @click="editor.chain().focus().toggleOrderedList().run()" :class="{ 'is-active': editor.isActive('orderedList') }">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
-      </button>
-      <button type="button" @click="editor.chain().focus().toggleBlockquote().run()" :class="{ 'is-active': editor.isActive('blockquote') }">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="6" x2="9" y2="6"/><line x1="21" y1="18" x2="9" y2="18"/><path d="M3 6v12"/></svg>
-      </button>
-      <div class="divider"></div>
-      <button type="button" @click="editor.chain().focus().setHorizontalRule().run()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
     
@@ -241,7 +237,10 @@ onBeforeUnmount(() => {
 .ProseMirror h1 { font-size: 1.75rem; font-weight: 700; margin-top: 1.5rem; }
 .ProseMirror h2 { font-size: 1.375rem; font-weight: 600; margin-top: 1.25rem; }
 .ProseMirror h3 { font-size: 1.125rem; font-weight: 600; margin-top: 1rem; }
-.ProseMirror a { color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+/* The editor itself no longer creates links/lists/blockquote/hr, but these
+   .ProseMirror styles are global and also render the read-only template pane and
+   the analysis/replay views, which may contain such nodes in existing content. */
+.ProseMirror a { color: var(--color-primary); text-decoration: underline; }
 .ProseMirror ul { padding-left: 1.5rem; list-style-type: disc; }
 .ProseMirror ol { padding-left: 1.5rem; list-style-type: decimal; }
 .ProseMirror blockquote {

@@ -24,6 +24,9 @@ interface TelemetryEvent {
     cursorPosition?: number;
     pasteLength?: number;
     actionType?: string;
+    // True when the pasted text was copied from within this page (editor or
+    // template pane) — legitimate, so excluded from the external-content score.
+    internal?: boolean;
   };
   currentHash: string;
 }
@@ -721,15 +724,20 @@ export function runFlagiaAnalysis(
     : 0;
 
   // ── Paste Detection (count + total volume) ──
+  // Pastes whose content was copied from this page (editor or template pane) are
+  // tagged `meta.internal` by the client and are legitimate (moving/duplicating
+  // one's own text, quoting the provided template) — they don't count as external
+  // content. Code-block pastes are likewise excluded.
+  const isInternalPaste = (e: TelemetryEvent) =>
+    e.meta?.internal === true ||
+    e.meta?.actionType === 'codeblock' || e.meta?.actionType === 'CB';
+
   let totalPasteCount = 0;
   let totalPastedLength = 0;
   for (const event of events) {
-    if (event.type === 'paste') {
-      const isCbPaste = event.meta?.actionType === 'codeblock' || event.meta?.actionType === 'CB';
-      if (!isCbPaste) {
-        totalPasteCount++;
-        totalPastedLength += event.meta?.pasteLength || 0;
-      }
+    if (event.type === 'paste' && !isInternalPaste(event)) {
+      totalPasteCount++;
+      totalPastedLength += event.meta?.pasteLength || 0;
     }
   }
 
@@ -782,7 +790,7 @@ export function runFlagiaAnalysis(
   // the window just after pastes, we discount the laundered revision credit and
   // dock the external-content score.
   const PASTE_EDIT_WINDOW_MS = 120000; // 2 min after each paste
-  const pasteTimes = events.filter(e => e.type === 'paste').map(e => e.timestamp);
+  const pasteTimes = events.filter(e => e.type === 'paste' && !isInternalPaste(e)).map(e => e.timestamp);
   let pasteAdjacentKeydowns = 0;
   if (pasteTimes.length > 0) {
     for (const e of events) {
