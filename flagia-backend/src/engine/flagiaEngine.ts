@@ -848,33 +848,33 @@ export function runFlagiaAnalysis(
   // and nothing meaningful was pasted, scale the score down so it can no longer
   // pass on healthy rhythm alone.
   //
-  // Two refinements over the original (len≥200 chars, hard RR<1.55 cliff):
+  // Two refinements over the original (len≥200 chars, hard RR<1.55 cliff), tuned
+  // back after the first pass ran too tight:
   //   1. SCRIPT-FAIR substance gate — measured in expected KEYSTROKES (typing
-  //      effort) instead of raw character count. Korean packs ~2.5 jamo
-  //      keystrokes per syllable, so 200 keystrokes ≈ 80 Hangul chars ≈ 200
-  //      Latin chars (comparable effort). A char-based floor let short-but-
-  //      substantial Korean transcriptions slip under it; an effort-based floor
-  //      catches Korean copy-typing as accurately as English.
-  //   2. SOFT RR taper — the upper bound is 1.8 with severity decaying linearly
-  //      to 0, not a hard cliff at 1.55. A copy-typist can no longer escape by
-  //      sprinkling a few token edits to nudge RR just past the old boundary.
+  //      effort) instead of raw character count, so Korean (~2.5 jamo keystrokes
+  //      per syllable) is judged like English. Floor is 320 keystrokes ≈ 130
+  //      Hangul chars ≈ 320 Latin chars — substantial enough that short genuine
+  //      answers aren't second-guessed, while still catching real transcriptions.
+  //   2. SOFT RR taper to 1.6 (not a hard 1.55 cliff, not the over-reaching 1.8):
+  //      it just closes the "nudge RR to 1.56 and escape" loophole. Genuine
+  //      clean-but-real writers at RR ≥ 1.6 are untouched.
   const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
   let transcriptionSeverity = 0;
-  if (effectiveExpectedKeystrokes >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.8 && pastedShare < 0.15) {
-    transcriptionSeverity = Math.min(1, (1.8 - revisionRatio) / 0.8); // RR 1.8→0 … 1.0→1
-    const penaltyFactor = 0.75 * transcriptionSeverity; // Scale by up to 75% depending on severity
+  if (effectiveExpectedKeystrokes >= 320 && revisionRatio >= 1.0 && revisionRatio < 1.6 && pastedShare < 0.15) {
+    transcriptionSeverity = Math.min(1, (1.6 - revisionRatio) / 0.6); // RR 1.6→0 … 1.0→1
+    const penaltyFactor = 0.7 * transcriptionSeverity; // Scale by up to 70% depending on severity
     let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
 
-    // Hard caps are keyed to the RR copy-typing zones (not the taper severity, so
-    // widening the taper to 1.8 doesn't drag the caps up with it):
-    //   RR < 1.35  → very linear, unmistakable transcription → cap 38 (RED).
-    //   RR < 1.55  → strong transcription signal → cap 48 (near-RED).
-    //   1.55–1.8   → borderline: ONLY the gentle graduated reduction above, no
+    // Hard caps are keyed to the RR copy-typing zones (kept narrow so the penalty
+    // bites only clear transcription, not merely-tidy writing):
+    //   RR < 1.3   → very linear, unmistakable transcription → cap 40 (RED).
+    //   RR < 1.5   → strong transcription signal → cap 50 (near-RED).
+    //   1.5–1.6    → borderline: ONLY the gentle graduated reduction above, no
     //                hard cap, so genuine clean-but-real writers aren't false-flagged.
-    if (revisionRatio < 1.35) {
-      penalized = Math.min(penalized, 38);
-    } else if (revisionRatio < 1.55) {
-      penalized = Math.min(penalized, 48);
+    if (revisionRatio < 1.3) {
+      penalized = Math.min(penalized, 40);
+    } else if (revisionRatio < 1.5) {
+      penalized = Math.min(penalized, 50);
     }
 
     const delta = Math.round((penalized - baseScore) * 100) / 100;
