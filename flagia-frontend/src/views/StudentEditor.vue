@@ -577,13 +577,11 @@ async function confirmSubmit() {
     <!-- Editor area: read-only template pane (left, only when a template exists) + editor (right) -->
     <div class="flex-1 p-4 lg:px-8 pb-8 overflow-hidden bg-background">
       <div class="max-w-6xl mx-auto h-full flex flex-col lg:flex-row gap-4">
-        <!-- Template pane (read-only reference) -->
-        <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-2/5">
-          <div class="text-xs font-semibold text-text-muted mb-1.5 flex items-center gap-1">
-            📄 과제 템플릿 · 읽기 전용
-          </div>
-          <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5 bg-white"
-               style="box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+        <!-- Template pane (read-only reference) — gray to distinguish from the
+             white editor; no header so its top aligns with the editor's. -->
+        <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-1/2">
+          <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5"
+               style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); background: #f3f4f6;">
             <div class="markdown-body ProseMirror" v-html="assignment?.template_text"></div>
           </div>
         </div>
