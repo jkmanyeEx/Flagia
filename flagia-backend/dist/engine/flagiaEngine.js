@@ -540,9 +540,23 @@ function getExpectedKeystrokeCount(text) {
  * Main analysis function
  */
 function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submittedAt) {
+    // Deduplicate consecutive keydown events of the exact same key that occur within 15ms
+    const cleanedEvents = [];
+    let lastKdTime = 0;
+    let lastKdKey = '';
+    for (const e of rawEvents) {
+        if (e.type === 'keydown' && e.meta?.key) {
+            if (e.meta.key === lastKdKey && lastKdTime > 0 && (e.timestamp - lastKdTime) < 15) {
+                continue;
+            }
+            lastKdTime = e.timestamp;
+            lastKdKey = e.meta.key;
+        }
+        cleanedEvents.push(e);
+    }
     const weights = MODE_WEIGHTS[mode] || MODE_WEIGHTS.STANDARD;
     const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
-    const events = stripSubmitInducedBlur(rawEvents);
+    const events = stripSubmitInducedBlur(cleanedEvents);
     // ── Template offset: strip HTML tags to get real text length ──
     const plainText = finalMarkdown.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
     // Strip HTML from template to do a proper text-to-text comparison
@@ -692,7 +706,9 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     for (let i = 0; i < events.length; i++) {
         const e = events[i];
         if (e.type === 'leave') {
-            pendingLeave = e.timestamp;
+            if (pendingLeave === null) {
+                pendingLeave = e.timestamp;
+            }
         }
         else if (e.type === 'reconnect') {
             reconnectCount++;
@@ -735,12 +751,20 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     // almost verbatim (very low revision) is the transcription signature: real
     // composition is messy (deletes/rewrites → higher RR). When that pattern holds
     // and nothing meaningful was pasted, scale the score down so it can no longer
-    // pass on healthy rhythm alone. Threshold (RR<1.5, len≥200) is tunable.
+    // pass on healthy rhythm alone. Threshold (RR<1.55, len≥200) is tunable.
     const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
     let transcriptionSeverity = 0;
-    if (effectiveTextLength >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.5 && pastedShare < 0.15) {
-        transcriptionSeverity = Math.min(1, (1.5 - revisionRatio) / 0.5); // RR 1.5→0 … 1.0→1
-        const penalized = Math.round(Math.max(0, Math.min(100, baseScore * (1 - 0.5 * transcriptionSeverity))) * 100) / 100;
+    if (effectiveTextLength >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.55 && pastedShare < 0.15) {
+        transcriptionSeverity = Math.min(1, (1.55 - revisionRatio) / 0.55); // RR 1.55→0 … 1.0→1
+        const penaltyFactor = 0.75 * transcriptionSeverity; // Scale by up to 75% depending on severity
+        let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
+        // Apply direct score caps to guarantee failing/RED or near-RED status for clear copy-typing:
+        if (transcriptionSeverity > 0.4) {
+            penalized = Math.min(penalized, 38);
+        }
+        else if (transcriptionSeverity > 0.1) {
+            penalized = Math.min(penalized, 48);
+        }
         const delta = Math.round((penalized - baseScore) * 100) / 100;
         if (delta < 0) {
             scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점', points: delta });

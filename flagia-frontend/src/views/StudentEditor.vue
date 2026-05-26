@@ -229,21 +229,57 @@ function handlePaste(e: ClipboardEvent, selection?: { cursor: number; selectionL
 // (document.visibilitychange) and the window (window blur/focus) instead of
 // the editor's own @blur/@focus.
 let windowBlurred = false
+let tabLeft = false
+
+function pauseActiveTimer() {
+  if (!sessionStartMs) return
+  baseSpentSec += (Date.now() - sessionStartMs) / 1000
+  sessionStartMs = 0
+}
+
+function resumeActiveTimer() {
+  if (sessionStartMs) return
+  sessionStartMs = Date.now()
+}
 
 function handleWindowBlur() {
   if (isLocked.value || submitting.value) return
+  if (tabLeft) return
   if (windowBlurred) return
   windowBlurred = true
   pushEvent('blur')
 }
 function handleWindowFocus() {
+  if (tabLeft) return
   if (!windowBlurred) return
   windowBlurred = false
   pushEvent('focus')
 }
 function handleVisibility() {
-  if (document.visibilityState === 'hidden') handleWindowBlur()
-  else handleWindowFocus()
+  if (isLocked.value || submitting.value) return
+  if (document.visibilityState === 'hidden') {
+    if (!tabLeft) {
+      if (windowBlurred) {
+        windowBlurred = false
+        pushEvent('focus')
+      }
+      tabLeft = true
+      pushEvent('leave')
+      pauseActiveTimer()
+    }
+  } else {
+    if (tabLeft) {
+      tabLeft = false
+      pushEvent('reconnect')
+      resumeActiveTimer()
+      if (document.hasFocus()) {
+        windowBlurred = false
+      } else {
+        windowBlurred = true
+        pushEvent('blur')
+      }
+    }
+  }
 }
 
 // ── Toolbar actions ──
