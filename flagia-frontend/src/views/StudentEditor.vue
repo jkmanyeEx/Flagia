@@ -44,7 +44,7 @@ const timerDanger = computed(() => {
 // Split pane state removed since we are using single pane rich text editor
 // Text stats
 const wordCount = computed(() => {
-  const text = content.value.trim()
+  const text = stripHtml(content.value).trim()
   return text.length
 })
 const readingTime = computed(() => {

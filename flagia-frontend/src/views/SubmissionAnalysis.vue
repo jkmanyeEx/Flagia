@@ -1333,7 +1333,7 @@ const backLabel = computed(() =>
                 <span>📧 {{ submission?.studentEmail }}</span>
               </div>
               <div class="flex items-center gap-3 font-mono">
-                <span>글자 수: <strong>{{ submission?.finalMarkdown?.length || 0 }}자</strong></span>
+                <span>글자 수: <strong>{{ finalPlain?.length || 0 }}자</strong></span>
                 <span v-if="submission?.submittedAt">제출일: {{ formatDate(submission.submittedAt) }}</span>
               </div>
             </div>
