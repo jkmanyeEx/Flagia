@@ -181,8 +181,15 @@ const filteredAssignments = computed(() => {
 
   list.sort((a, b) => {
     if (sortBy.value === 'DUE_DATE') {
+      const now = Date.now()
       const aTime = new Date(a.due_date).getTime()
       const bTime = new Date(b.due_date).getTime()
+      const aPassed = aTime < now
+      const bPassed = bTime < now
+
+      if (aPassed !== bPassed) {
+        return aPassed ? 1 : -1
+      }
       return aTime - bTime
     } else if (sortBy.value === 'NEWEST') {
       const aTime = new Date(a.created_at || a.due_date).getTime()
