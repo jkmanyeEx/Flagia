@@ -73,6 +73,7 @@ interface AnalysisResult {
   revisionRatio: number;
   totalPasteCount: number;
   totalBlurDuration: number;
+  totalBlurCount: number;
   // v2 additions
   components: {
     typingRhythm: ComponentScore;
@@ -303,12 +304,43 @@ function scoreBlurDuration(totalSeconds: number): number {
   return Math.max(0, 30 - Math.floor((totalSeconds - 600) / 60));
 }
 
-function getBlurDescription(totalSeconds: number): string {
-  if (totalSeconds < 30) return '작성 중 화면 이탈이 거의 없었습니다. 집중해서 글을 작성한 것으로 판단됩니다.';
-  if (totalSeconds < 60) return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 짧은 참고 활동 정도로 보입니다.`;
-  if (totalSeconds < 120) return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 외부 자료를 참고하며 작성한 것으로 보입니다.`;
-  if (totalSeconds < 300) return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 상당한 시간을 다른 곳에서 보냈습니다.`;
-  return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 작성 시간의 상당 부분을 외부에서 활동한 것으로 의심됩니다.`;
+/**
+ * Frequency modifier for the focus score. Time-away is the PRIMARY signal
+ * (scoreBlurDuration above), but a high RATE of leaving-and-returning — popping
+ * out repeatedly even briefly, e.g. glancing at a second screen every few
+ * seconds — is itself suspicious and shouldn't score a clean 100. This returns
+ * a small, CAPPED deduction so frequency only nudges the duration-based score.
+ *
+ * - 0–1 departures: free.
+ * - Volume: a high total count over the session adds a little.
+ * - Rate: bursty in-and-out (departures per active minute) adds more — this is
+ *   the "left 3 times in one minute" case the duration score alone misses.
+ * Capped at 18 points so duration always remains the dominant factor.
+ */
+function blurFrequencyPenalty(blurCount: number, activeMinutes: number): number {
+  if (blurCount <= 1) return 0;
+  const perMin = activeMinutes > 0.5 ? blurCount / activeMinutes : blurCount;
+  let penalty = 0;
+  if (blurCount > 3) penalty += (blurCount - 3) * 1.5;   // volume: many over the session
+  if (perMin > 1.5) penalty += (perMin - 1.5) * 6;       // rate: bursty popping in/out
+  return Math.min(18, Math.round(penalty));
+}
+
+function getBlurDescription(totalSeconds: number, blurCount: number, freqPenalty: number): string {
+  // Frequency note appended when bursty in/out drove a deduction even though the
+  // total time away may be small.
+  const freqNote = freqPenalty > 0
+    ? ` 또한 화면을 ${blurCount}회 드나들어, 잦은 이탈 빈도로 인한 감점이 적용되었습니다.`
+    : '';
+  if (totalSeconds < 30) {
+    return (freqPenalty > 0
+      ? `화면 이탈 시간은 짧지만(총 ${Math.round(totalSeconds)}초), 짧게 자주 드나든 정황이 있습니다.${freqNote}`
+      : '작성 중 화면 이탈이 거의 없었습니다. 집중해서 글을 작성한 것으로 판단됩니다.');
+  }
+  if (totalSeconds < 60) return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 짧은 참고 활동 정도로 보입니다.${freqNote}`;
+  if (totalSeconds < 120) return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 외부 자료를 참고하며 작성한 것으로 보입니다.${freqNote}`;
+  if (totalSeconds < 300) return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 상당한 시간을 다른 곳에서 보냈습니다.${freqNote}`;
+  return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 작성 시간의 상당 부분을 외부에서 활동한 것으로 의심됩니다.${freqNote}`;
 }
 
 /**
@@ -701,8 +733,10 @@ export function runFlagiaAnalysis(
     }
   }
 
-  // ── Blur Duration ──
+  // ── Blur Duration + count ──
+  // blurCount = completed leave→return round-trips (the frequency signal).
   let totalBlurDuration = 0;
+  let blurCount = 0;
   let lastBlurTime: number | null = null;
 
   for (const event of events) {
@@ -712,6 +746,7 @@ export function runFlagiaAnalysis(
       const blurMs = event.timestamp - lastBlurTime;
       if (blurMs > 0 && blurMs < 3600000) {
         totalBlurDuration += blurMs / 1000;
+        blurCount++;
       }
       lastBlurTime = null;
     }
@@ -773,7 +808,11 @@ export function runFlagiaAnalysis(
   if (pasteLaundering) {
     pasteScore = Math.round(pasteScore * (1 - 0.3 * Math.min(1, pasteAdjacentRatio)));
   }
-  const blurScore = scoreBlurDuration(totalBlurDuration);
+  // Time-away is the primary focus signal; a frequency deduction is layered on
+  // below once active writing-time (for the per-minute rate) is known.
+  const blurDurationScore = scoreBlurDuration(totalBlurDuration);
+  let blurScore = blurDurationScore;
+  let blurFreqPenalty = 0;
 
   // ── Writing-time score: derived from active session span vs. final text length ──
   // The student may have left the site and come back; that wall-clock gap is NOT
@@ -823,6 +862,12 @@ export function runFlagiaAnalysis(
     : 0;
   const totalDurationSec = Math.max(0, rawSpanSec - disconnectedMs / 1000);
   const timeScore = scoreWritingTime(totalDurationSec, effectiveTextLength);
+
+  // Layer the frequency deduction onto the focus score now that we know the
+  // active writing time (for the per-minute leave rate). Duration stays dominant
+  // (full 0–100 range); frequency only nudges it down, capped at 18.
+  blurFreqPenalty = blurFrequencyPenalty(blurCount, totalDurationSec / 60);
+  blurScore = Math.max(0, blurDurationScore - blurFreqPenalty);
 
   // ── Composite Flagia Score ──
   // baseScore is the weighted sum of the 5 components (what the component cards
@@ -937,7 +982,7 @@ export function runFlagiaAnalysis(
       weighted: Math.round(blurScore * weights.blurWeight * 100) / 100,
       weight: weights.blurWeight,
       label: '집중도',
-      description: getBlurDescription(totalBlurDuration),
+      description: getBlurDescription(totalBlurDuration, blurCount, blurFreqPenalty),
       status: getComponentStatus(blurScore),
     } as ComponentScore,
     writingTime: {
@@ -991,6 +1036,7 @@ export function runFlagiaAnalysis(
     revisionRatio: Math.round(revisionRatio * 10000) / 10000,
     totalPasteCount,
     totalBlurDuration: Math.round(totalBlurDuration * 100) / 100,
+    totalBlurCount: blurCount,
     components,
     timeline,
     blurIntervals,
