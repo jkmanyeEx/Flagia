@@ -103,12 +103,8 @@ jobs:
               echo "mysql client or DB secrets unavailable; skipping."
             else
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
-              echo "--- DETAILS FOR SUBMISSION: 733d0f87 ---"
-              $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, JSON_EXTRACT(analysis_json, '\$.components') AS components FROM submissions WHERE id = '733d0f87-62f8-4eff-9b38-d50d5e4400e9' \G" || true
-              $MYSQL -e "SELECT SUBSTRING(s.final_markdown, 1, 300) AS md_short, SUBSTRING(a.template_text, 1, 300) AS tmpl_short FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '733d0f87-62f8-4eff-9b38-d50d5e4400e9' \G" || true
-              echo "--- DETAILS FOR SUBMISSION: 53732ace ---"
-              $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, JSON_EXTRACT(analysis_json, '\$.components') AS components FROM submissions WHERE id = '53732ace-a7dc-4150-9b82-3ce4949545d1' \G" || true
-              $MYSQL -e "SELECT SUBSTRING(s.final_markdown, 1, 300) AS md_short, SUBSTRING(a.template_text, 1, 300) AS tmpl_short FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '53732ace-a7dc-4150-9b82-3ce4949545d1' \G" || true
+              echo "--- LAST 6 SUBMISSIONS VERTICAL DETAILS ---"
+              $MYSQL -e "SELECT s.id, s.status, s.flagia_score AS score, s.flag_status AS flag, ROUND(s.coefficient_of_variation,3) AS cv, ROUND(s.revision_ratio,2) AS rr, s.total_paste_count AS pastes, ROUND(s.total_blur_duration) AS blur_s, u.email, SUBSTRING(s.final_markdown, 1, 150) AS md_short, SUBSTRING(a.template_text, 1, 150) AS tmpl_short FROM submissions s JOIN users u ON s.student_id = u.id JOIN assignments a ON s.assignment_id = a.id ORDER BY s.created_at DESC LIMIT 6 \G" || true
               echo "--- TARGET: onsae09 — submission overview ---"
               $MYSQL -t -e "SELECT s.id, s.status, LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions FROM submissions s JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 3;" || true
               echo "--- onsae09 keydown key distribution ---"
