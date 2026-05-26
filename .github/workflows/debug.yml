@@ -105,6 +105,38 @@ jobs:
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
               echo "--- DETAILS FOR SUBMISSION: 8c3d5e99 ---"
               $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, JSON_EXTRACT(analysis_json, '\$.components') AS components FROM submissions WHERE id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' \G" || true
+              $MYSQL -e "SELECT LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, JSON_EXTRACT(analysis_json, '\$.baseScore') AS baseScore, JSON_EXTRACT(analysis_json, '\$.scoreAdjustments') AS adjustments, JSON_EXTRACT(analysis_json, '\$.revisionRatio') AS rr, JSON_EXTRACT(analysis_json, '\$.sessionSummary') AS session FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' \G" || true
+              echo "--- 8c3d5e99 template matching trace ---"
+              cd "$HOME/server/Flagia/flagia-backend"
+              SQL_USER="$DB_USER" SQL_PW="$DB_PASS" node -e "
+              const pool = require('./dist/database').default;
+              async function trace() {
+                const [subRows] = await pool.query(\"SELECT s.final_markdown, a.template_text FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '8c3d5e99-0e34-41d3-886f-6a30399e0107'\");
+                const { final_markdown, template_text } = subRows[0];
+                const [sessRows] = await pool.query(\"SELECT events_blob FROM sessions WHERE submission_id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' ORDER BY start_time ASC\");
+                let allEvents = [];
+                for (const s of sessRows) { try { const p = JSON.parse(s.events_blob); if (Array.isArray(p)) allEvents.push(...p); } catch {} }
+                const strip = t => (t||'').replace(/<br\s*\/?>/gi,'\n').replace(/<hr\s*\/?>/gi,'\n').replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi,'\n').replace(/<[^>]*>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+                const plainText = strip(final_markdown);
+                const plainTemplate = strip(template_text);
+                let preserved = 0;
+                if (plainTemplate.length > 0) {
+                  const cs = 20, tc = Math.ceil(plainTemplate.length / cs);
+                  for (let i = 0; i < tc; i++) {
+                    const s = i * cs, chunk = plainTemplate.substring(s, Math.min(s + cs, plainTemplate.length));
+                    if (chunk.length >= 10 && plainText.includes(chunk)) preserved += chunk.length;
+                  }
+                }
+                const totalKD = allEvents.filter(e=>e.type==='keydown').length;
+                function getEKC(text) { let c=0; for(let i=0;i<text.length;i++){const cd=text.charCodeAt(i);if(cd>=0xAC00&&cd<=0xD7A3){const o=cd-0xAC00,j=Math.floor((o%588)/28),g=o%28;let k=1;if([9,10,11,14,15,16,19].includes(j))k+=2;else k+=1;if(g>0){if([3,5,6,9,10,11,12,13,14,15,18].includes(g))k+=2;else k+=1;}c+=k}else if(cd>=0x3131&&cd<=0x318E)c+=1;else if(text[i]==='\\r')continue;else c+=1}return Math.max(1,c)}
+                const totalExp = getEKC(plainText);
+                const ratio = plainText.length > 0 ? preserved / plainText.length : 0;
+                console.log('plainText.len='+plainText.length+' plainTemplate.len='+plainTemplate.length+' preserved='+preserved+' ratio='+ratio.toFixed(4));
+                console.log('isTemplateDominated='+(ratio>0.8)+' totalKD='+totalKD+' totalExp='+totalExp+' isSubstantiallyTyped='+(totalKD>0.5*totalExp));
+                process.exit(0);
+              }
+              trace().catch(e=>{console.error(e);process.exit(1)});
+              " || true
               $MYSQL -e "SELECT SUBSTRING(s.final_markdown, 1, 300) AS md_short, SUBSTRING(a.template_text, 1, 300) AS tmpl_short FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' \G" || true
               echo "--- TARGET: onsae09 — submission overview ---"
               $MYSQL -t -e "SELECT s.id, s.status, LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions FROM submissions s JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 3;" || true
