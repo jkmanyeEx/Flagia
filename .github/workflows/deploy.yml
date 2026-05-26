@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  # Allow manual deploys (GitHub → Actions → Remote Deploy Workflow → Run workflow).
+  # Useful when a push doesn't spawn a run (e.g. concurrent-push race) or to
+  # re-deploy the current main on demand.
+  workflow_dispatch:
 
 jobs:
   deploy:
