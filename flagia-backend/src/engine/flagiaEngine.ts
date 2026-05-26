@@ -158,45 +158,37 @@ function computeCv(ikiValues: number[]): number {
  * real humans don't type at machine-like constant speed.
  */
 function scoreCv(cv: number): number {
-  // Sweet spot: natural human variation
-  if (cv >= 0.4 && cv <= 0.9) return 100;
+  // Sweet spot: natural human variation. Intentionally WIDE so genuine writers
+  // (fast clean typists through thoughtful pausers) aren't mistaken for
+  // copy-typists — the curve has a broad plateau and gentle, high-floored sides.
+  if (cv >= 0.3 && cv <= 1.1) return 100;
 
-  // ── Below the natural range = COPY-TYPING danger zone ──
-  // A human composing their own thoughts is bimodal: fast jamo/letter bursts
-  // punctuated by cognitive micro-pauses (500–1500ms) at idea/word boundaries.
-  // That bimodality keeps Cv up. A near-uniform low Cv means the keystrokes
-  // were almost certainly read off-screen and transcribed (사서 베껴 치기), so
-  // the penalty here is deliberately harsh.
-  if (cv >= 0.3 && cv < 0.4) {
-    return Math.round(70 + ((cv - 0.3) / 0.1) * 30);   // 70 → 100
+  // ── Below the plateau = uniform typing (possible copy-typing) ──
+  // Softer than before, with a much higher floor; only near-machine uniformity
+  // scores very low. The transcription penalty (RR-based) is the real backstop.
+  if (cv >= 0.24 && cv < 0.3) {
+    return Math.round(85 + ((cv - 0.24) / 0.06) * 15);  // 85 → 100
   }
-  // Suspiciously consistent — strong copy-typing signal.
-  if (cv >= 0.2 && cv < 0.3) {
-    return Math.round(22 + ((cv - 0.2) / 0.1) * 33);   // 22 → 55
+  if (cv >= 0.16 && cv < 0.24) {
+    return Math.round(62 + ((cv - 0.16) / 0.08) * 23);  // 62 → 85
   }
-  // Very uniform — copy-typing / automated transcription.
-  if (cv >= 0.1 && cv < 0.2) {
-    return Math.round(6 + ((cv - 0.1) / 0.1) * 16);    // 6 → 22
+  if (cv >= 0.09 && cv < 0.16) {
+    return Math.round(38 + ((cv - 0.09) / 0.07) * 24);  // 38 → 62
   }
   // Machine-like uniformity.
-  if (cv < 0.1) {
-    return Math.max(2, Math.round(6 * (cv / 0.1)));    // 0 → 6
+  if (cv < 0.09) {
+    return Math.max(15, Math.round(38 * (cv / 0.09)));  // 0 → 38 (floor 15)
   }
 
-  // ── Above the natural range = treated leniently ──
-  // A HIGH Cv just means very uneven keystroke timing — most often a student
-  // who pauses to think between bursts (정상적인 사고 멈춤). Genuine external
-  // copying/reference behaviour is already captured by the focus (blur) and
-  // external-content (paste) components, so penalizing high Cv here would
-  // double-count. We keep a gentle taper with a generous floor.
-  if (cv > 0.9 && cv <= 1.3) {
-    return Math.round(90 + ((1.3 - cv) / 0.4) * 10);   // 90 → 100
+  // ── Above the plateau = uneven bursts (thinking pauses). Lenient taper. ──
+  if (cv > 1.1 && cv <= 1.8) {
+    return Math.round(92 + ((1.8 - cv) / 0.7) * 8);     // 92 → 100
   }
-  if (cv > 1.3 && cv <= 2.0) {
-    return Math.round(78 + ((2.0 - cv) / 0.7) * 12);   // 78 → 90
+  if (cv > 1.8 && cv <= 2.8) {
+    return Math.round(80 + ((2.8 - cv) / 1.0) * 12);    // 80 → 92
   }
-  // Very erratic — still only a mild deduction (floor 70).
-  return Math.max(70, Math.round(78 - (cv - 2.0) * 4));
+  // Very erratic — still only a mild deduction (floor 72).
+  return Math.max(72, Math.round(80 - (cv - 2.8) * 3));
 }
 
 /**
@@ -239,14 +231,17 @@ function scoreRevisionRatio(rr: number): number {
   // Copy-typing (reading text off-screen and transcribing it) is near-LINEAR:
   // each character typed roughly once, almost no revision → RR ≈ 1.0–1.2.
   // So a very low RR is a transcription signal, not "clean writing".
+  // Broadened, higher-floored curve: the healthy plateau starts earlier and runs
+  // wider, and the low-RR (copy-typing) zone is no longer brutal — the dedicated
+  // transcription penalty is the real backstop, so this component just nudges.
   if (rr <= 0) return 50;                                              // no usable data
-  if (rr < 1.0) return 10;                                             // keystrokes < text → pasted
-  if (rr < 1.15) return Math.round(18 + ((rr - 1.0) / 0.15) * 14);     // 18→32  copy-typing zone
-  if (rr < 1.4)  return Math.round(32 + ((rr - 1.15) / 0.25) * 28);    // 32→60
-  if (rr < 1.6)  return Math.round(60 + ((rr - 1.4) / 0.2) * 40);      // 60→100
-  if (rr <= 3.0) return 100;                                           // healthy composition
-  if (rr <= 5.0) return Math.round(100 - ((rr - 3.0) / 2.0) * 40);     // 100→60
-  return Math.max(30, Math.round(60 - (rr - 5.0) * 8));                // >5 erratic
+  if (rr < 1.0) return 30;                                             // keystrokes < text → pasted
+  if (rr < 1.2)  return Math.round(45 + ((rr - 1.0) / 0.2) * 20);      // 45→65  copy-typing zone
+  if (rr < 1.4)  return Math.round(65 + ((rr - 1.2) / 0.2) * 25);      // 65→90
+  if (rr < 1.5)  return Math.round(90 + ((rr - 1.4) / 0.1) * 10);      // 90→100
+  if (rr <= 3.5) return 100;                                           // broad healthy plateau
+  if (rr <= 6.0) return Math.round(100 - ((rr - 3.5) / 2.5) * 35);     // 100→65
+  return Math.max(40, Math.round(65 - (rr - 6.0) * 6));                // >6 erratic
 }
 
 function getRrDescription(rr: number): string {
@@ -901,33 +896,27 @@ export function runFlagiaAnalysis(
   // and nothing meaningful was pasted, scale the score down so it can no longer
   // pass on healthy rhythm alone.
   //
-  // Two refinements over the original (len≥200 chars, hard RR<1.55 cliff), tuned
-  // back after the first pass ran too tight:
-  //   1. SCRIPT-FAIR substance gate — measured in expected KEYSTROKES (typing
-  //      effort) instead of raw character count, so Korean (~2.5 jamo keystrokes
-  //      per syllable) is judged like English. Floor is 320 keystrokes ≈ 130
-  //      Hangul chars ≈ 320 Latin chars — substantial enough that short genuine
-  //      answers aren't second-guessed, while still catching real transcriptions.
-  //   2. SOFT RR taper to 1.6 (not a hard 1.55 cliff, not the over-reaching 1.8):
-  //      it just closes the "nudge RR to 1.56 and escape" loophole. Genuine
-  //      clean-but-real writers at RR ≥ 1.6 are untouched.
+  // Tuned to bite only CLEAR transcription, so genuine writers pass easily:
+  //   - Substance gate: expected KEYSTROKES (typing effort, script-fair) ≥ 400
+  //     (~160 Hangul / 400 Latin chars) — short answers are never second-guessed.
+  //   - RR taper to 1.45 only (was 1.6): a writer with any real revision escapes.
+  //   - Max reduction 55% and gentler, higher caps — the penalty nudges toward
+  //     RED for blatant cases instead of slamming everything borderline.
   const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
   let transcriptionSeverity = 0;
-  if (effectiveExpectedKeystrokes >= 320 && revisionRatio >= 1.0 && revisionRatio < 1.6 && pastedShare < 0.15) {
-    transcriptionSeverity = Math.min(1, (1.6 - revisionRatio) / 0.6); // RR 1.6→0 … 1.0→1
-    const penaltyFactor = 0.7 * transcriptionSeverity; // Scale by up to 70% depending on severity
+  if (effectiveExpectedKeystrokes >= 400 && revisionRatio >= 1.0 && revisionRatio < 1.45 && pastedShare < 0.15) {
+    transcriptionSeverity = Math.min(1, (1.45 - revisionRatio) / 0.45); // RR 1.45→0 … 1.0→1
+    const penaltyFactor = 0.55 * transcriptionSeverity; // Scale by up to 55% depending on severity
     let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
 
-    // Hard caps are keyed to the RR copy-typing zones (kept narrow so the penalty
-    // bites only clear transcription, not merely-tidy writing):
-    //   RR < 1.3   → very linear, unmistakable transcription → cap 40 (RED).
-    //   RR < 1.5   → strong transcription signal → cap 50 (near-RED).
-    //   1.5–1.6    → borderline: ONLY the gentle graduated reduction above, no
-    //                hard cap, so genuine clean-but-real writers aren't false-flagged.
-    if (revisionRatio < 1.3) {
-      penalized = Math.min(penalized, 40);
-    } else if (revisionRatio < 1.5) {
-      penalized = Math.min(penalized, 50);
+    // Hard caps only for unmistakable transcription (very low RR):
+    //   RR < 1.2  → near-linear, clear transcription → cap 48.
+    //   RR < 1.4  → strong signal → cap 58.
+    //   1.4–1.45  → borderline: only the gentle graduated reduction, no hard cap.
+    if (revisionRatio < 1.2) {
+      penalized = Math.min(penalized, 48);
+    } else if (revisionRatio < 1.4) {
+      penalized = Math.min(penalized, 58);
     }
 
     const delta = Math.round((penalized - baseScore) * 100) / 100;
