@@ -627,6 +627,9 @@ select.input {
 .paste-dot {
   background-color: #EF4444;
 }
+.internal-paste-dot {
+  background-color: #38BDF8;
+}
 .blur-dot {
   background-color: #F59E0B;
 }

@@ -110,14 +110,15 @@ interface TimelineBucket {
   keystrokeCount: number;
   avgIki: number;
   isBlurred: boolean;
-  pasteCount: number;
+  pasteCount: number;          // external pastes (count against the score)
+  internalPasteCount?: number; // in-page copy→paste (allowed, shown for context)
   isGap?: boolean;
   gapDurationMs?: number;
   collapsedCount?: number;
 }
 
 function isEmptyBucket(b: TimelineBucket): boolean {
-  return b.keystrokeCount === 0 && !b.isBlurred && b.pasteCount === 0
+  return b.keystrokeCount === 0 && !b.isBlurred && b.pasteCount === 0 && !(b.internalPasteCount && b.internalPasteCount > 0)
 }
 
 function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, submittedAt?: string): TimelineBucket[] {
@@ -150,7 +151,9 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, submi
       .map(e => e.iki);
     const avgIki = ikiValues.length > 0 ? ikiValues.reduce((a, b) => a + b, 0) / ikiValues.length : 0;
     const isBlurred = bucketEvents.some(e => e.type === 'blur') && !bucketEvents.some(e => e.type === 'focus');
-    const pasteCount = bucketEvents.filter(e => e.type === 'paste').length;
+    const pasteEvents = bucketEvents.filter(e => e.type === 'paste');
+    const pasteCount = pasteEvents.filter(e => !e.meta?.internal).length;
+    const internalPasteCount = pasteEvents.filter(e => e.meta?.internal).length;
 
     rawBuckets.push({
       startMs: currentStart - minT,
@@ -159,6 +162,7 @@ function buildTimeline(eventsList: TelemetryEvent[], bucketSizeMs = 30000, submi
       avgIki: Math.round(avgIki),
       isBlurred,
       pasteCount,
+      internalPasteCount,
     });
 
     currentStart = currentEnd;
@@ -1043,6 +1047,10 @@ const backLabel = computed(() =>
                     class="timeline-indicator-dot paste-dot"
                   ></span>
                   <span
+                    v-if="bucket.internalPasteCount && bucket.internalPasteCount > 0"
+                    class="timeline-indicator-dot internal-paste-dot"
+                  ></span>
+                  <span
                     v-if="bucket.isBlurred"
                     class="timeline-indicator-dot blur-dot"
                   ></span>
@@ -1081,6 +1089,10 @@ const backLabel = computed(() =>
                     <span>📋 붙여넣기</span>
                     <span>{{ bucket.pasteCount }}회</span>
                   </div>
+                  <div v-if="bucket.internalPasteCount && bucket.internalPasteCount > 0" class="flex justify-between text-sky-400 font-semibold">
+                    <span>📋 내부 붙여넣기 (허용)</span>
+                    <span>{{ bucket.internalPasteCount }}회</span>
+                  </div>
                   <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
                     <span>⚠️ 에디터 이탈</span>
                     <span>감지됨</span>
@@ -1100,6 +1112,9 @@ const backLabel = computed(() =>
           </div>
           <div class="flex items-center gap-1.5">
             <div class="w-2.5 h-2.5 rounded-full" style="background: #EF4444;"></div> 붙여넣기
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #38BDF8;"></div> 내부 붙여넣기(허용)
           </div>
           <div class="flex items-center gap-1.5">
             <div class="w-3 h-3 rounded-sm" style="background: #E5E7EB;"></div> 비활동
