@@ -21,6 +21,7 @@ interface TelemetryEvent {
         cursorPosition?: number;
         pasteLength?: number;
         actionType?: string;
+        internal?: boolean;
     };
     currentHash: string;
 }
@@ -65,6 +66,7 @@ interface AnalysisResult {
     revisionRatio: number;
     totalPasteCount: number;
     totalBlurDuration: number;
+    totalBlurCount: number;
     components: {
         typingRhythm: ComponentScore;
         revisionIntensity: ComponentScore;

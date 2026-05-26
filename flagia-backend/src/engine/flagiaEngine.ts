@@ -937,6 +937,29 @@ export function runFlagiaAnalysis(
     }
   }
 
+  // ── Template copy-typing structural penalty ──
+  // When the student receives a template and types it verbatim by hand, the
+  // linear-transcription check above can't catch it: non-content keydowns
+  // (Shift for ㅃ/ㅉ/ㄸ/ㄲ/ㅆ, Backspace for corrections, navigation) inflate
+  // totalKeydowns far above 1.6× expected, so revisionRatio lands in the
+  // "healthy composition" zone and the penalty never fires.
+  // Detect this case directly: >80% of the final text matches the template
+  // AND the student actually typed (>50% of expected keystrokes). This
+  // combination is uniquely the template copy-typing signature — a student
+  // who left the template untouched would have very few keydowns.
+  if (transcriptionSeverity === 0 && isTemplateDominated && isSubstantiallyTyped
+      && plainText.length >= 200 && pastedShare < 0.15) {
+    transcriptionSeverity = preservedTemplateLength / plainText.length; // 0.8–1.0
+    const penaltyFactor = 0.75 * transcriptionSeverity;
+    let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
+    penalized = Math.min(penalized, 38); // Hard cap → RED
+    const delta = Math.round((penalized - baseScore) * 100) / 100;
+    if (delta < 0) {
+      scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점 — 제시문 그대로 타이핑', points: delta });
+      flagiaScore = penalized;
+    }
+  }
+
   // ── Flag Status ──
   let flagStatus: 'GREEN' | 'AMBER' | 'RED';
   if (flagiaScore >= thresholds.green) {

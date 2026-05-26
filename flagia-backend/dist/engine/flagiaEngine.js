@@ -247,16 +247,48 @@ function scoreBlurDuration(totalSeconds) {
         return 40;
     return Math.max(0, 30 - Math.floor((totalSeconds - 600) / 60));
 }
-function getBlurDescription(totalSeconds) {
-    if (totalSeconds < 30)
-        return '작성 중 화면 이탈이 거의 없었습니다. 집중해서 글을 작성한 것으로 판단됩니다.';
+/**
+ * Frequency modifier for the focus score. Time-away is the PRIMARY signal
+ * (scoreBlurDuration above), but a high RATE of leaving-and-returning — popping
+ * out repeatedly even briefly, e.g. glancing at a second screen every few
+ * seconds — is itself suspicious and shouldn't score a clean 100. This returns
+ * a small, CAPPED deduction so frequency only nudges the duration-based score.
+ *
+ * - 0–1 departures: free.
+ * - Volume: a high total count over the session adds a little.
+ * - Rate: bursty in-and-out (departures per active minute) adds more — this is
+ *   the "left 3 times in one minute" case the duration score alone misses.
+ * Capped at 18 points so duration always remains the dominant factor.
+ */
+function blurFrequencyPenalty(blurCount, activeMinutes) {
+    if (blurCount <= 1)
+        return 0;
+    const perMin = activeMinutes > 0.5 ? blurCount / activeMinutes : blurCount;
+    let penalty = 0;
+    if (blurCount > 3)
+        penalty += (blurCount - 3) * 1.5; // volume: many over the session
+    if (perMin > 1.5)
+        penalty += (perMin - 1.5) * 6; // rate: bursty popping in/out
+    return Math.min(18, Math.round(penalty));
+}
+function getBlurDescription(totalSeconds, blurCount, freqPenalty) {
+    // Frequency note appended when bursty in/out drove a deduction even though the
+    // total time away may be small.
+    const freqNote = freqPenalty > 0
+        ? ` 또한 화면을 ${blurCount}회 드나들어, 잦은 이탈 빈도로 인한 감점이 적용되었습니다.`
+        : '';
+    if (totalSeconds < 30) {
+        return (freqPenalty > 0
+            ? `화면 이탈 시간은 짧지만(총 ${Math.round(totalSeconds)}초), 짧게 자주 드나든 정황이 있습니다.${freqNote}`
+            : '작성 중 화면 이탈이 거의 없었습니다. 집중해서 글을 작성한 것으로 판단됩니다.');
+    }
     if (totalSeconds < 60)
-        return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 짧은 참고 활동 정도로 보입니다.`;
+        return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 짧은 참고 활동 정도로 보입니다.${freqNote}`;
     if (totalSeconds < 120)
-        return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 외부 자료를 참고하며 작성한 것으로 보입니다.`;
+        return `총 ${Math.round(totalSeconds)}초간 화면을 이탈했습니다. 외부 자료를 참고하며 작성한 것으로 보입니다.${freqNote}`;
     if (totalSeconds < 300)
-        return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 상당한 시간을 다른 곳에서 보냈습니다.`;
-    return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 작성 시간의 상당 부분을 외부에서 활동한 것으로 의심됩니다.`;
+        return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 상당한 시간을 다른 곳에서 보냈습니다.${freqNote}`;
+    return `총 ${Math.round(totalSeconds / 60)}분간 화면을 이탈했습니다. 작성 시간의 상당 부분을 외부에서 활동한 것으로 의심됩니다.${freqNote}`;
 }
 /**
  * Score component: Writing Time
@@ -616,19 +648,24 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         ? totalKeydowns / effectiveExpectedKeystrokes
         : 0;
     // ── Paste Detection (count + total volume) ──
+    // Pastes whose content was copied from this page (editor or template pane) are
+    // tagged `meta.internal` by the client and are legitimate (moving/duplicating
+    // one's own text, quoting the provided template) — they don't count as external
+    // content. Code-block pastes are likewise excluded.
+    const isInternalPaste = (e) => e.meta?.internal === true ||
+        e.meta?.actionType === 'codeblock' || e.meta?.actionType === 'CB';
     let totalPasteCount = 0;
     let totalPastedLength = 0;
     for (const event of events) {
-        if (event.type === 'paste') {
-            const isCbPaste = event.meta?.actionType === 'codeblock' || event.meta?.actionType === 'CB';
-            if (!isCbPaste) {
-                totalPasteCount++;
-                totalPastedLength += event.meta?.pasteLength || 0;
-            }
+        if (event.type === 'paste' && !isInternalPaste(event)) {
+            totalPasteCount++;
+            totalPastedLength += event.meta?.pasteLength || 0;
         }
     }
-    // ── Blur Duration ──
+    // ── Blur Duration + count ──
+    // blurCount = completed leave→return round-trips (the frequency signal).
     let totalBlurDuration = 0;
+    let blurCount = 0;
     let lastBlurTime = null;
     for (const event of events) {
         if (event.type === 'blur') {
@@ -638,6 +675,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             const blurMs = event.timestamp - lastBlurTime;
             if (blurMs > 0 && blurMs < 3600000) {
                 totalBlurDuration += blurMs / 1000;
+                blurCount++;
             }
             lastBlurTime = null;
         }
@@ -670,7 +708,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     // the window just after pastes, we discount the laundered revision credit and
     // dock the external-content score.
     const PASTE_EDIT_WINDOW_MS = 120000; // 2 min after each paste
-    const pasteTimes = events.filter(e => e.type === 'paste').map(e => e.timestamp);
+    const pasteTimes = events.filter(e => e.type === 'paste' && !isInternalPaste(e)).map(e => e.timestamp);
     let pasteAdjacentKeydowns = 0;
     if (pasteTimes.length > 0) {
         for (const e of events) {
@@ -696,7 +734,11 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     if (pasteLaundering) {
         pasteScore = Math.round(pasteScore * (1 - 0.3 * Math.min(1, pasteAdjacentRatio)));
     }
-    const blurScore = scoreBlurDuration(totalBlurDuration);
+    // Time-away is the primary focus signal; a frequency deduction is layered on
+    // below once active writing-time (for the per-minute rate) is known.
+    const blurDurationScore = scoreBlurDuration(totalBlurDuration);
+    let blurScore = blurDurationScore;
+    let blurFreqPenalty = 0;
     // ── Writing-time score: derived from active session span vs. final text length ──
     // The student may have left the site and come back; that wall-clock gap is NOT
     // writing time. We sum every (leave → reconnect) gap and subtract it from the
@@ -747,6 +789,11 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         : 0;
     const totalDurationSec = Math.max(0, rawSpanSec - disconnectedMs / 1000);
     const timeScore = scoreWritingTime(totalDurationSec, effectiveTextLength);
+    // Layer the frequency deduction onto the focus score now that we know the
+    // active writing time (for the per-minute leave rate). Duration stays dominant
+    // (full 0–100 range); frequency only nudges it down, capped at 18.
+    blurFreqPenalty = blurFrequencyPenalty(blurCount, totalDurationSec / 60);
+    blurScore = Math.max(0, blurDurationScore - blurFreqPenalty);
     // ── Composite Flagia Score ──
     // baseScore is the weighted sum of the 5 components (what the component cards
     // add up to). Structural penalties are then recorded as explicit adjustments
@@ -766,23 +813,61 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     // almost verbatim (very low revision) is the transcription signature: real
     // composition is messy (deletes/rewrites → higher RR). When that pattern holds
     // and nothing meaningful was pasted, scale the score down so it can no longer
-    // pass on healthy rhythm alone. Threshold (RR<1.55, len≥200) is tunable.
+    // pass on healthy rhythm alone.
+    //
+    // Two refinements over the original (len≥200 chars, hard RR<1.55 cliff), tuned
+    // back after the first pass ran too tight:
+    //   1. SCRIPT-FAIR substance gate — measured in expected KEYSTROKES (typing
+    //      effort) instead of raw character count, so Korean (~2.5 jamo keystrokes
+    //      per syllable) is judged like English. Floor is 320 keystrokes ≈ 130
+    //      Hangul chars ≈ 320 Latin chars — substantial enough that short genuine
+    //      answers aren't second-guessed, while still catching real transcriptions.
+    //   2. SOFT RR taper to 1.6 (not a hard 1.55 cliff, not the over-reaching 1.8):
+    //      it just closes the "nudge RR to 1.56 and escape" loophole. Genuine
+    //      clean-but-real writers at RR ≥ 1.6 are untouched.
     const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
     let transcriptionSeverity = 0;
-    if (effectiveTextLength >= 200 && revisionRatio >= 1.0 && revisionRatio < 1.55 && pastedShare < 0.15) {
-        transcriptionSeverity = Math.min(1, (1.55 - revisionRatio) / 0.55); // RR 1.55→0 … 1.0→1
-        const penaltyFactor = 0.75 * transcriptionSeverity; // Scale by up to 75% depending on severity
+    if (effectiveExpectedKeystrokes >= 320 && revisionRatio >= 1.0 && revisionRatio < 1.6 && pastedShare < 0.15) {
+        transcriptionSeverity = Math.min(1, (1.6 - revisionRatio) / 0.6); // RR 1.6→0 … 1.0→1
+        const penaltyFactor = 0.7 * transcriptionSeverity; // Scale by up to 70% depending on severity
         let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
-        // Apply direct score caps to guarantee failing/RED or near-RED status for clear copy-typing:
-        if (transcriptionSeverity > 0.4) {
-            penalized = Math.min(penalized, 38);
+        // Hard caps are keyed to the RR copy-typing zones (kept narrow so the penalty
+        // bites only clear transcription, not merely-tidy writing):
+        //   RR < 1.3   → very linear, unmistakable transcription → cap 40 (RED).
+        //   RR < 1.5   → strong transcription signal → cap 50 (near-RED).
+        //   1.5–1.6    → borderline: ONLY the gentle graduated reduction above, no
+        //                hard cap, so genuine clean-but-real writers aren't false-flagged.
+        if (revisionRatio < 1.3) {
+            penalized = Math.min(penalized, 40);
         }
-        else if (transcriptionSeverity > 0.1) {
-            penalized = Math.min(penalized, 48);
+        else if (revisionRatio < 1.5) {
+            penalized = Math.min(penalized, 50);
         }
         const delta = Math.round((penalized - baseScore) * 100) / 100;
         if (delta < 0) {
             scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점', points: delta });
+            flagiaScore = penalized;
+        }
+    }
+    // ── Template copy-typing structural penalty ──
+    // When the student receives a template and types it verbatim by hand, the
+    // linear-transcription check above can't catch it: non-content keydowns
+    // (Shift for ㅃ/ㅉ/ㄸ/ㄲ/ㅆ, Backspace for corrections, navigation) inflate
+    // totalKeydowns far above 1.6× expected, so revisionRatio lands in the
+    // "healthy composition" zone and the penalty never fires.
+    // Detect this case directly: >80% of the final text matches the template
+    // AND the student actually typed (>50% of expected keystrokes). This
+    // combination is uniquely the template copy-typing signature — a student
+    // who left the template untouched would have very few keydowns.
+    if (transcriptionSeverity === 0 && isTemplateDominated && isSubstantiallyTyped
+        && plainText.length >= 200 && pastedShare < 0.15) {
+        transcriptionSeverity = preservedTemplateLength / plainText.length; // 0.8–1.0
+        const penaltyFactor = 0.75 * transcriptionSeverity;
+        let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
+        penalized = Math.min(penalized, 38); // Hard cap → RED
+        const delta = Math.round((penalized - baseScore) * 100) / 100;
+        if (delta < 0) {
+            scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점 — 제시문 그대로 타이핑', points: delta });
             flagiaScore = penalized;
         }
     }
@@ -839,7 +924,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             weighted: Math.round(blurScore * weights.blurWeight * 100) / 100,
             weight: weights.blurWeight,
             label: '집중도',
-            description: getBlurDescription(totalBlurDuration),
+            description: getBlurDescription(totalBlurDuration, blurCount, blurFreqPenalty),
             status: getComponentStatus(blurScore),
         },
         writingTime: {
@@ -883,6 +968,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         revisionRatio: Math.round(revisionRatio * 10000) / 10000,
         totalPasteCount,
         totalBlurDuration: Math.round(totalBlurDuration * 100) / 100,
+        totalBlurCount: blurCount,
         components,
         timeline,
         blurIntervals,
