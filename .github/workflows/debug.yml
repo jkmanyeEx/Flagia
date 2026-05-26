@@ -103,9 +103,9 @@ jobs:
               echo "mysql client or DB secrets unavailable; skipping."
             else
               MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
-              echo "--- DETAILS FOR SUBMISSION: 765c39a1 ---"
-              $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, JSON_EXTRACT(analysis_json, '\$.components') AS components FROM submissions WHERE id = '765c39a1-cb26-4e55-9768-155ccda5e504' \G" || true
-              $MYSQL -e "SELECT SUBSTRING(s.final_markdown, 1, 300) AS md_short, SUBSTRING(a.template_text, 1, 300) AS tmpl_short FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '765c39a1-cb26-4e55-9768-155ccda5e504' \G" || true
+              echo "--- DETAILS FOR SUBMISSION: 8c3d5e99 ---"
+              $MYSQL -e "SELECT id, status, flagia_score AS score, flag_status AS flag, ROUND(coefficient_of_variation,3) AS cv, ROUND(revision_ratio,2) AS rr, total_paste_count AS pastes, ROUND(total_blur_duration) AS blur_s, JSON_EXTRACT(analysis_json, '\$.components') AS components FROM submissions WHERE id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' \G" || true
+              $MYSQL -e "SELECT SUBSTRING(s.final_markdown, 1, 300) AS md_short, SUBSTRING(a.template_text, 1, 300) AS tmpl_short FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = '8c3d5e99-0e34-41d3-886f-6a30399e0107' \G" || true
               echo "--- TARGET: onsae09 — submission overview ---"
               $MYSQL -t -e "SELECT s.id, s.status, LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions FROM submissions s JOIN assignments a ON s.assignment_id=a.id JOIN users u ON s.student_id=u.id WHERE u.email='onsae09@gmail.com' ORDER BY s.created_at DESC LIMIT 3;" || true
               echo "--- onsae09 keydown key distribution ---"
