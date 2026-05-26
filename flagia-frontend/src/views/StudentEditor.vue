@@ -115,9 +115,15 @@ async function pushEvent(type: string, meta: any = {}) {
 // when present and falls back to the keystroke automaton for old submissions.
 // The engine ignores 'snapshot' events entirely, so this has no scoring impact.
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div')
-  tmp.innerHTML = html || ''
-  return (tmp.textContent || tmp.innerText || '').replace(/ /g, ' ')
+  return (html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
 }
 
 function captureSnapshot() {

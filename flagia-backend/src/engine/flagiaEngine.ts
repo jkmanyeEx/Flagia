@@ -618,11 +618,21 @@ export function runFlagiaAnalysis(
   const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
   const events = stripSubmitInducedBlur(cleanedEvents);
 
-  // ── Template offset: strip HTML tags to get real text length ──
-  const plainText = finalMarkdown.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  const plainText = finalMarkdown
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
 
   // Strip HTML from template to do a proper text-to-text comparison
   const plainTemplate = (templateText || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')

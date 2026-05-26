@@ -287,14 +287,18 @@ function isJung(k: string) { return JUNG_LIST.includes(k) }
 // reconstructed document isn't missing its opening section.
 const templatePlain = computed(() =>
   (submission.value?.templateText || '')
-    .replace(/<\/p><p>/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
 )
 const finalPlain = computed(() =>
   (submission.value?.finalMarkdown || '')
-    .replace(/<\/p><p>/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')

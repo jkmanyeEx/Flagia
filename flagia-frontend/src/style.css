@@ -498,6 +498,7 @@ select.input {
 .markdown-body h2 { font-size: 1.375rem; font-weight: 600; margin: 1.25rem 0 0.625rem; }
 .markdown-body h3 { font-size: 1.125rem; font-weight: 600; margin: 1rem 0 0.5rem; }
 .markdown-body p { margin: 0.75rem 0; }
+.markdown-body p:empty { min-height: 1em; padding-top: 0.01px; /* prevent margin-collapse on blank lines */ }
 .markdown-body strong { font-weight: 700; }
 .markdown-body em { font-style: italic; }
 .markdown-body del { text-decoration: line-through; color: var(--color-text-muted); }
