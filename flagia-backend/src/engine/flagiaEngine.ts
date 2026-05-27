@@ -1039,13 +1039,15 @@ export function runFlagiaAnalysis(
       //    NOT penalize low divergence alone — a clean honest writer who composes
       //    linearly also has low divergence and must not be flagged. Only the
       //    high-RR + low-divergence COMBINATION is unambiguous deception.
-      if (revisionRatio >= 1.4 && divergenceRatio >= 0 && divergenceRatio < 0.05) {
+      if (revisionRatio >= 1.25 && divergenceRatio >= 0 && divergenceRatio < 0.05) {
         detectBasis = 'divergence';
         const divShort = (0.05 - divergenceRatio) / 0.05;            // 0..1 (how empty the "edits" were)
-        const claimed = Math.min(1, (revisionRatio - 1.4) / 1.0);    // RR 1.4→0 … 2.4→1
-        transcriptionSeverity = Math.min(1, 0.4 + divShort * 0.4 + claimed * 0.2);
+        const claimed = Math.min(1, (revisionRatio - 1.25) / 1.0);   // RR 1.25→0 … 2.25→1
+        // Severity scales with how far past the 1.25 boundary the RR is, so the
+        // borderline (1.25) gets a moderate hit and blatant fake-editing is hammered.
+        transcriptionSeverity = Math.min(1, 0.25 + divShort * 0.35 + claimed * 0.4);
         // "More acting penalty": the busier the fake editing, the bigger the boost.
-        actingFactor = Math.min(0.5, 0.2 + (revisionRatio - 1.4) * 0.3);
+        actingFactor = Math.min(0.5, 0.1 + (revisionRatio - 1.25) * 0.3);
       }
     } else if (substantial && !hasSnapshots && revisionRatio >= 1.0 && revisionRatio < 1.35) {
       // 3) FALLBACK (no snapshots): RR-based, deliberately LIGHT (less RR penalty).
