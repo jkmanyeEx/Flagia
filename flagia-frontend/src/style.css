@@ -455,6 +455,17 @@ select.input {
   background: var(--color-danger);
 }
 
+/* ── Live-watch indicator ── */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--color-flag-red, #dc2626);
+  box-shadow: 0 0 4px rgba(220, 38, 38, 0.6);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
 @keyframes statusPulse {
   0%, 100% { box-shadow: 0 0 4px rgba(22, 163, 74, 0.5); }
   50% { box-shadow: 0 0 8px rgba(22, 163, 74, 0.8); }

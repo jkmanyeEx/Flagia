@@ -30,6 +30,10 @@ const showDetailModal = ref(false)
 const showDeleteModal = ref(false)
 const assignmentToDelete = ref<string | null>(null)
 const detailSubmission = ref<any>(null)
+// Live monitoring: the student's current plain text, streamed while a teacher
+// watches an in-progress submission.
+const liveContent = ref<string | null>(null)
+const isLiveWatching = ref(false)
 const showDeleteSubModal = ref(false)
 const subToDelete = ref<any>(null)
 const deletingSub = ref(false)
@@ -125,12 +129,24 @@ function connectWS() {
             payload: { assignmentId: selectedAssignment.value.id }
           }))
         }
+        // Resume live-watch after a reconnect if the detail modal is still open.
+        if (isLiveWatching.value && detailSubmission.value) {
+          socket?.send(JSON.stringify({
+            type: 'watch_submission',
+            payload: { submissionId: detailSubmission.value.id }
+          }))
+        }
       } else if (type === 'submissions_update') {
         if (selectedAssignment.value && payload.assignmentId === selectedAssignment.value.id) {
           fetchSubmissionsSilently()
         }
       } else if (type === 'assignments_update') {
         fetchAssignmentsSilently()
+      } else if (type === 'submission_content_update') {
+        // Live writing sync for the open detail modal.
+        if (detailSubmission.value && payload.submissionId === detailSubmission.value.id) {
+          liveContent.value = payload.content
+        }
       }
     } catch (err) {
       console.error('WS message error:', err)
@@ -323,8 +339,28 @@ async function executeDeleteSub() {
 }
 
 function openDetail(sub: any) {
+  stopWatching()
   detailSubmission.value = sub
+  liveContent.value = null
   showDetailModal.value = true
+  // Live-watch in-progress writing in real time.
+  if (sub.status === 'IN_PROGRESS' && socket && socket.readyState === WebSocket.OPEN) {
+    isLiveWatching.value = true
+    socket.send(JSON.stringify({ type: 'watch_submission', payload: { submissionId: sub.id } }))
+  }
+}
+
+function stopWatching() {
+  if (isLiveWatching.value && detailSubmission.value && socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'unwatch_submission', payload: { submissionId: detailSubmission.value.id } }))
+  }
+  isLiveWatching.value = false
+}
+
+function closeDetail() {
+  stopWatching()
+  showDetailModal.value = false
+  liveContent.value = null
 }
 
 function goToAnalysis(submissionId: string) {
@@ -575,14 +611,19 @@ function getGaugeOffset(score: number) {
     </div>
 
     <!-- Detail Modal -->
-    <div v-if="showDetailModal && detailSubmission" class="modal-overlay" @click.self="showDetailModal = false">
+    <div v-if="showDetailModal && detailSubmission" class="modal-overlay" @click.self="closeDetail">
       <div class="modal-content max-w-3xl mx-4 p-6">
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 class="text-xl font-bold">{{ detailSubmission.student_name }}의 제출물</h3>
+            <h3 class="text-xl font-bold flex items-center gap-2">
+              {{ detailSubmission.student_name }}의 제출물
+              <span v-if="isLiveWatching" class="inline-flex items-center gap-1 text-xs font-semibold text-flag-red">
+                <span class="live-dot"></span> 실시간
+              </span>
+            </h3>
             <p class="text-sm text-text-muted">{{ detailSubmission.student_email }}</p>
           </div>
-          <button @click="showDetailModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="closeDetail" class="btn btn-ghost btn-xs">✕</button>
         </div>
 
         <div v-if="detailSubmission.flagia_score != null" class="flex items-center gap-4 mb-6 p-4 rounded-xl bg-background border border-border">
@@ -596,13 +637,18 @@ function getGaugeOffset(score: number) {
           }">
             {{ detailSubmission.flag_status }}
           </span>
-          <button @click="goToAnalysis(detailSubmission.id); showDetailModal = false" class="btn btn-primary ml-auto">
+          <button @click="goToAnalysis(detailSubmission.id); closeDetail()" class="btn btn-primary ml-auto">
             상세 분석 보기
           </button>
         </div>
 
-        <h4 class="text-sm font-semibold mb-2">제출 내용</h4>
-        <div class="border border-border rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
+        <h4 class="text-sm font-semibold mb-2">{{ isLiveWatching ? '실시간 작성 내용' : '제출 내용' }}</h4>
+        <!-- Live view: stream the student's current plain text as they write -->
+        <div v-if="isLiveWatching" class="border border-flag-red/30 rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
+          <div v-if="liveContent" class="whitespace-pre-wrap text-text-primary leading-relaxed">{{ liveContent }}</div>
+          <div v-else class="text-text-muted text-sm">학생의 작성 내용을 기다리는 중...</div>
+        </div>
+        <div v-else class="border border-border rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
           <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || '(내용 없음)'"></div>
         </div>
 
@@ -610,7 +656,7 @@ function getGaugeOffset(score: number) {
           <button @click="confirmDeleteSub(detailSubmission)" class="btn btn-danger btn-sm">
             제출물 초기화 (다시 쓰기 허용)
           </button>
-          <button @click="showDetailModal = false" class="btn btn-outline btn-sm">
+          <button @click="closeDetail" class="btn btn-outline btn-sm">
             닫기
           </button>
         </div>
