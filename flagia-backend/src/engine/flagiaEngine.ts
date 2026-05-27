@@ -653,6 +653,60 @@ function ngramContainment(a: string, b: string, n = 3): number {
   return hit / A.size;
 }
 
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// ── Content divergence (genuine reworking only) ──
+// How much GENUINELY DIFFERENT content the student wrote then abandoned: words
+// that appeared mid-draft (in a snapshot), are absent from the final, AND aren't
+// just a typo / IME-composition fragment of a final word. Excluding that churn
+// is what makes this robust for Korean — IME intermediate syllables (쉬→쉼) and
+// corrected typos no longer masquerade as "reworded content". Genuine rewording
+// (writing a phrase, then replacing it with a DIFFERENT one) still counts.
+function computeDivergence(snapshotTexts: string[], finalText: string): number {
+  const tokenize = (s: string): string[] =>
+    ((s || '').normalize('NFC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+  const finalSet = new Set(tokenize(finalText));
+  if (finalSet.size === 0) return 0;
+  const finalArr = [...finalSet];
+
+  // Distinct tokens seen mid-draft that never made it to the final.
+  const candidates = new Set<string>();
+  for (const snap of snapshotTexts)
+    for (const w of tokenize(snap))
+      if (w.length >= 2 && !finalSet.has(w)) candidates.add(w);
+
+  // A candidate is churn (not genuine rework) if it's a prefix/build-up of a
+  // final word or a near-miss spelling of one.
+  const isChurn = (w: string): boolean => {
+    for (const f of finalArr) {
+      if (f.startsWith(w) || w.startsWith(f)) return true;
+      if (Math.abs(f.length - w.length) <= 2) {
+        const tol = Math.max(1, Math.round(Math.max(w.length, f.length) * 0.3));
+        if (levenshtein(w, f) <= tol) return true;
+      }
+    }
+    return false;
+  };
+
+  let genuine = 0;
+  for (const w of candidates) if (!isChurn(w)) genuine++;
+  return genuine / finalSet.size;
+}
+
 /**
  * Main analysis function
  */
@@ -940,22 +994,11 @@ export function runFlagiaAnalysis(
   // Content divergence from snapshots (−1 = no snapshots → RR fallback).
   const snapshotTexts = events
     .filter(e => e.type === 'snapshot' && typeof e.meta?.text === 'string')
-    .map(e => normSim(e.meta!.text as string))
-    .filter(t => t.length > 0);
+    .map(e => e.meta!.text as string)
+    .filter(t => t.trim().length > 0);
   const hasSnapshots = snapshotTexts.length >= 2;
-  let divergenceRatio = -1;
-  if (hasSnapshots) {
-    const finalGrams = ngramSet(normSim(plainText), 3);
-    if (finalGrams.size > 0) {
-      const seen = new Set<string>();
-      for (const t of snapshotTexts) for (const g of ngramSet(t, 3)) seen.add(g);
-      let abandoned = 0;
-      for (const g of seen) if (!finalGrams.has(g)) abandoned++;
-      divergenceRatio = abandoned / finalGrams.size;
-    } else {
-      divergenceRatio = 0;
-    }
-  }
+  // Genuine-reworking divergence (typo/IME churn filtered out — Korean-safe).
+  const divergenceRatio = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
 
   // Fuzzy template match: share of the final text's n-grams contained in the
   // provided template (typo-tolerant). High ⇒ the student largely reproduced the
