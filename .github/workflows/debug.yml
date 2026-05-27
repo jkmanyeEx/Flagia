@@ -23,6 +23,7 @@ on:
           - submissions
           - regrade
           - subinspect
+          - copytype_audit
       sub_id:
         description: 'Submission id to inspect (used by subinspect target)'
         required: false
@@ -64,6 +65,14 @@ jobs:
             line "TEMPLATE (first 300 chars)"
             $MYSQL -N -e "SELECT SUBSTRING(a.template_text,1,300) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE s.id='$SID';" || true
             echo ""; echo "Subinspect complete."
+            exit 0
+          fi
+
+          if [ "$TARGET" = "copytype_audit" ]; then
+            MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
+            line "COPY-TYPING AUDIT (all submitted; has_snap=0 ⇒ no divergence detection possible)"
+            $MYSQL -t -e "SELECT LEFT(s.id,8) AS id, s.flag_status AS flag, ROUND(s.flagia_score,1) AS score, ROUND(s.revision_ratio,2) AS rr, ROUND(s.coefficient_of_variation,2) AS cv, (SELECT COALESCE(SUM(se.events_blob LIKE '%\"snapshot\"%'),0) FROM sessions se WHERE se.submission_id=s.id) AS has_snap, JSON_UNQUOTE(JSON_EXTRACT(s.analysis_json,'\$.transcription.basis')) AS basis, DATE(s.created_at) AS created FROM submissions s WHERE s.status IN ('SUBMITTED','FORCE_CLOSED') ORDER BY s.created_at DESC;" || true
+            echo ""; echo "Audit complete."
             exit 0
           fi
 
