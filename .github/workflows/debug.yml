@@ -22,6 +22,12 @@ on:
           - git
           - submissions
           - regrade
+          - subinspect
+      sub_id:
+        description: 'Submission id to inspect (used by subinspect target)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   diagnostics:
@@ -33,6 +39,7 @@ jobs:
       - name: Diagnostics
         env:
           TARGET: ${{ inputs.target }}
+          SUB_ID: ${{ inputs.sub_id }}
           DB_HOST: 127.0.0.1
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_MIGRATE_USER }}
@@ -40,6 +47,25 @@ jobs:
         run: |
           want() { [ "$TARGET" = "all" ] || [ "$TARGET" = "$1" ]; }
           line() { echo ""; echo "===== $1 ====="; }
+
+          if [ "$TARGET" = "subinspect" ] && [ -n "$SUB_ID" ]; then
+            MYSQL="mysql --host=$DB_HOST --user=$DB_USER --password=$DB_PASS $DB_NAME"
+            SID="$(printf '%s' "$SUB_ID" | sed "s/'/''/g")"
+            line "SUBMISSION OVERVIEW ($SUB_ID)"
+            $MYSQL -t -e "SELECT s.status, LENGTH(s.final_markdown) AS md_len, LENGTH(a.template_text) AS tmpl_len, ROUND(s.flagia_score,1) AS score, s.flag_status AS flag, ROUND(s.revision_ratio,3) AS rr, ROUND(s.coefficient_of_variation,3) AS cv, s.total_paste_count AS pastes, (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE s.id='$SID';" || true
+            line "TRANSCRIPTION BREAKDOWN (analysis_json.transcription)"
+            $MYSQL -N -e "SELECT JSON_PRETTY(JSON_EXTRACT(analysis_json,'\$.transcription')) FROM submissions WHERE id='$SID';" || true
+            echo "baseScore / final:"
+            $MYSQL -t -e "SELECT JSON_EXTRACT(analysis_json,'\$.baseScore') AS baseScore, JSON_EXTRACT(analysis_json,'\$.flagiaScore') AS finalScore FROM submissions WHERE id='$SID';" || true
+            line "EVENT TYPE COUNTS (incl. snapshot)"
+            $MYSQL -t -e "SELECT jt.typ AS event_type, COUNT(*) AS cnt FROM sessions se JOIN JSON_TABLE(se.events_blob,'\$[*]' COLUMNS(typ VARCHAR(24) PATH '\$.type')) jt WHERE se.submission_id='$SID' GROUP BY jt.typ ORDER BY cnt DESC;" || true
+            line "FINAL TEXT (first 500 chars)"
+            $MYSQL -N -e "SELECT SUBSTRING(final_markdown,1,500) FROM submissions WHERE id='$SID';" || true
+            line "TEMPLATE (first 300 chars)"
+            $MYSQL -N -e "SELECT SUBSTRING(a.template_text,1,300) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE s.id='$SID';" || true
+            echo ""; echo "Subinspect complete."
+            exit 0
+          fi
 
           if want git; then
             line "GIT STATE"
