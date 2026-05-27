@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 import RichTextEditor from '../components/RichTextEditor.vue'
+import { resolveWsUrl } from '../composables/apiHost'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,7 +50,63 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+
+async function refreshDataSilently() {
+  try {
+    const data = await api(`/api/classrooms/${route.params.id}`, { token: token.value! })
+    classroom.value = data.classroom
+    members.value = data.members || []
+    assignments.value = data.assignments || []
+  } catch { /* noop */ }
+}
+
+const WS_URL = resolveWsUrl()
+let socket: WebSocket | null = null
+
+function connectWS() {
+  if (!token.value) return
+  socket = new WebSocket(WS_URL)
+  socket.onopen = () => {
+    socket?.send(JSON.stringify({
+      type: 'auth',
+      payload: { token: token.value }
+    }))
+  }
+  socket.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      const { type, payload } = msg
+      if (type === 'auth_ok') {
+        socket?.send(JSON.stringify({
+          type: 'join_classroom',
+          payload: { classroomId: route.params.id }
+        }))
+      } else if (type === 'classroom_members_update' && payload.classroomId === route.params.id) {
+        refreshDataSilently()
+      }
+    } catch (err) {
+      console.error('WS message error:', err)
+    }
+  }
+  socket.onclose = () => {
+    setTimeout(() => {
+      if (socket) connectWS()
+    }, 3000)
+  }
+}
+
+onMounted(async () => {
+  await load()
+  connectWS()
+})
+
+onUnmounted(() => {
+  if (socket) {
+    const s = socket
+    socket = null
+    s.close()
+  }
+})
 
 function formatDate(d: string) {
   if (!d) return '-'

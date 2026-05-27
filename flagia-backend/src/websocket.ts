@@ -21,6 +21,7 @@ interface ClientState {
   submissionId?: string;
   sessionId?: string;
   assignmentId?: string;
+  classroomId?: string;
 }
 
 // Track connected clients
@@ -50,6 +51,17 @@ export function notifyAssignmentsUpdate() {
       client.ws.send(JSON.stringify({
         type: 'assignments_update',
         payload: {}
+      }));
+    }
+  }
+}
+
+export function notifyClassroomMembersUpdate(classroomId: string) {
+  for (const client of clients.values()) {
+    if (client.classroomId === classroomId && client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(JSON.stringify({
+        type: 'classroom_members_update',
+        payload: { classroomId }
       }));
     }
   }
@@ -218,6 +230,13 @@ export function initWebSocket(server: HttpServer) {
           case 'teacher_join': {
             if (!clientState || clientState.user.role !== 'TEACHER') break;
             clientState.assignmentId = payload.assignmentId;
+            break;
+          }
+
+          // ── Join classroom room for student list live refresh ──
+          case 'join_classroom': {
+            if (!clientState) break;
+            clientState.classroomId = payload.classroomId;
             break;
           }
 

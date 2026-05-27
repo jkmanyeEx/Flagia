@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../database';
 import { authMiddleware, teacherOnly } from '../middleware/auth';
-import { notifyAssignmentsUpdate } from '../websocket';
+import { notifyAssignmentsUpdate, notifyClassroomMembersUpdate } from '../websocket';
 
 const router = Router();
 
@@ -122,6 +122,7 @@ router.post('/join/:code', authMiddleware, async (req: Request, res: Response) =
         'INSERT INTO classroom_members (id, classroom_id, student_id) VALUES (?, ?, ?)',
         [uuidv4(), classroomId, user.userId]
       );
+      notifyClassroomMembersUpdate(classroomId);
     }
 
     res.json({ message: '학급에 참여했습니다', classroomId });
@@ -148,6 +149,8 @@ router.delete('/:id/leave', authMiddleware, async (req: Request, res: Response) 
       res.status(404).json({ error: '해당 학급에 참여하고 있지 않습니다' });
       return;
     }
+
+    notifyClassroomMembersUpdate(req.params.id);
 
     res.json({ message: '학급에서 탈퇴했습니다' });
   } catch (err) {
