@@ -683,11 +683,16 @@ function computeDivergence(snapshotTexts: string[], finalText: string): number {
   if (finalSet.size === 0) return 0;
   const finalArr = [...finalSet];
 
-  // Distinct tokens seen mid-draft that never made it to the final.
-  const candidates = new Set<string>();
-  for (const snap of snapshotTexts)
-    for (const w of tokenize(snap))
-      if (w.length >= 2 && !finalSet.has(w)) candidates.add(w);
+  // How many snapshots each non-final token appears in. Genuinely written-then-
+  // abandoned content persists across several 2-second snapshots; Korean IME
+  // composition states and fleeting typos flicker in just ONE snapshot, so a
+  // persistence floor (≥ 2 snapshots) strips that transient noise.
+  const seenCount = new Map<string, number>();
+  for (const snap of snapshotTexts) {
+    const toks = new Set(tokenize(snap));
+    for (const w of toks)
+      if (w.length >= 2 && !finalSet.has(w)) seenCount.set(w, (seenCount.get(w) || 0) + 1);
+  }
 
   // A candidate is churn (not genuine rework) if it's a prefix/build-up of a
   // final word or a near-miss spelling of one.
@@ -703,7 +708,11 @@ function computeDivergence(snapshotTexts: string[], finalText: string): number {
   };
 
   let genuine = 0;
-  for (const w of candidates) if (!isChurn(w)) genuine++;
+  for (const [w, cnt] of seenCount) {
+    if (cnt < 2) continue;       // transient flicker (IME/typo) → not real rework
+    if (isChurn(w)) continue;
+    genuine++;
+  }
   return genuine / finalSet.size;
 }
 
