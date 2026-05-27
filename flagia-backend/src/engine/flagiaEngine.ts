@@ -1015,18 +1015,22 @@ export function runFlagiaAnalysis(
   const templateSim = plainTemplate.length > 20 ? ngramContainment(plainText, plainTemplate, 3) : 0;
 
   const substantial = effectiveExpectedKeystrokes >= 400 && plainText.length >= 120;
+  // The fake-edit (acting) case is gated on actual typing EFFORT, not final
+  // length: lots of keystrokes that produced ~no content change is suspicious
+  // even for a short final text (e.g. a short essay typed with heavy fake churn).
+  const actingEligible = totalKeydowns >= 300 && plainText.length >= 50;
   const lowPaste = pastedShare < 0.15;
 
   let transcriptionSeverity = 0;
   let actingFactor = 0;
   let detectBasis: 'none' | 'divergence' | 'rr' | 'template' = 'none';
 
-  if (substantial && lowPaste) {
-    if (templateSim > 0.8 && isSubstantiallyTyped) {
+  if (lowPaste) {
+    if (substantial && templateSim > 0.8 && isSubstantiallyTyped) {
       // 1) Reproduced the provided template by hand (even with minor changes).
       transcriptionSeverity = Math.min(1, templateSim);
       detectBasis = 'template';
-    } else if (hasSnapshots) {
+    } else if (hasSnapshots && actingEligible) {
       // 2) FAKE-EDIT "acting" (the robust catch): the student appears to revise a
       //    lot (high RR ⇒ lots of keystrokes beyond the final length) yet the
       //    content barely DIVERGED from the final (≈ nothing was reworded/abandoned).
@@ -1043,7 +1047,7 @@ export function runFlagiaAnalysis(
         // "More acting penalty": the busier the fake editing, the bigger the boost.
         actingFactor = Math.min(0.5, 0.2 + (revisionRatio - 1.4) * 0.3);
       }
-    } else if (revisionRatio >= 1.0 && revisionRatio < 1.35) {
+    } else if (substantial && !hasSnapshots && revisionRatio >= 1.0 && revisionRatio < 1.35) {
       // 3) FALLBACK (no snapshots): RR-based, deliberately LIGHT (less RR penalty).
       transcriptionSeverity = Math.min(1, (1.35 - revisionRatio) / 0.35);
       detectBasis = 'rr';
