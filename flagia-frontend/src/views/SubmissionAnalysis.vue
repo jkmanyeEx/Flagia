@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
+import { resolveWsUrl } from '../composables/apiHost'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,49 @@ const replayPlaying = ref(false)
 const replayCurrentMs = ref(0)
 const replaySpeed = ref(10)
 const replayIntervalId = ref<any>(null)
+
+const WS_URL = resolveWsUrl()
+let socket: WebSocket | null = null
+
+async function refreshDataSilently() {
+  try {
+    const analysisData = await api(`/api/submissions/${route.params.submissionId}/analysis`, {
+      token: token.value!,
+    })
+    data.value = analysisData
+  } catch (err) {
+    console.error('Failed to silently refresh analysis:', err)
+  }
+}
+
+function connectWS() {
+  if (!token.value) return
+  socket = new WebSocket(WS_URL)
+  socket.onopen = () => {
+    socket?.send(JSON.stringify({
+      type: 'auth',
+      payload: { token: token.value }
+    }))
+  }
+  socket.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      const { type, payload } = msg
+      if (type === 'submissions_update') {
+        if (payload.studentId === submission.value?.studentId || payload.assignmentId === submission.value?.assignmentId) {
+          refreshDataSilently()
+        }
+      }
+    } catch (err) {
+      console.error('WS message error:', err)
+    }
+  }
+  socket.onclose = () => {
+    setTimeout(() => {
+      if (socket) connectWS()
+    }, 3000)
+  }
+}
 
 onMounted(async () => {
   try {
@@ -42,6 +86,15 @@ onMounted(async () => {
     error.value = e.message || '분석 데이터를 불러올 수 없습니다'
   } finally {
     loading.value = false
+  }
+  connectWS()
+})
+
+onUnmounted(() => {
+  if (socket) {
+    const s = socket
+    socket = null
+    s.close()
   }
 })
 
@@ -999,6 +1052,18 @@ const backLabel = computed(() =>
             <span>⚠️ {{ adj.label }}</span>
             <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}점</span>
           </div>
+
+          <!-- Copy-typing (transcription) penalty breakdown: each detection metric -->
+          <div v-if="analysis.transcription && analysis.transcription.triggered" class="mt-1 rounded-lg bg-background border border-border p-3">
+            <div class="text-xs font-semibold text-flag-red mb-2">베껴쓰기 감점 세부 지표</div>
+            <div class="space-y-1">
+              <div v-for="(row, i) in analysis.transcription.rows" :key="i" class="flex justify-between items-center text-xs">
+                <span class="text-text-secondary">{{ row.label }}</span>
+                <span class="font-mono font-medium text-text-primary">{{ row.value }}</span>
+              </div>
+            </div>
+          </div>
+
           <div class="flex justify-between items-center pt-2 border-t border-border">
             <span class="font-semibold text-text-primary">최종 Flagia Score</span>
             <span class="font-mono font-bold text-base" :style="{ color: flagColor(analysis.flagStatus || '') }">
@@ -1442,7 +1507,7 @@ const backLabel = computed(() =>
           <div class="bg-slate-50 border border-slate-100 rounded-lg p-4 text-center">
             <div class="text-xs text-text-muted">획득 점수</div>
             <div class="text-3xl font-black text-primary mt-1">
-              {{ score !== null ? score : '-' }} <span class="text-sm font-normal text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
+              {{ score !== null ? Math.round(Number(score)) : '-' }} <span class="text-sm font-normal text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
             </div>
           </div>
 
