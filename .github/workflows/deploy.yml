@@ -1,124 +1,102 @@
-name: Remote Deploy Workflow
+name: Deploy production
 
 on:
   push:
     branches:
       - main
-  # Allow manual deploys (GitHub → Actions → Remote Deploy Workflow → Run workflow).
-  # Useful when a push doesn't spawn a run (e.g. concurrent-push race) or to
-  # re-deploy the current main on demand.
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flagia-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    name: Build and deploy to EC2
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+
     steps:
-      - name: Checkout fresh code
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Build (in runner workspace)
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            flagia-frontend/package-lock.json
+            flagia-backend/package-lock.json
+
+      - name: Build frontend
+        working-directory: flagia-frontend
         run: |
-          echo "Building frontend & backend..."
-          cd flagia-frontend
-          npm ci --verbose
-          npm install
+          npm ci --no-audit --no-fund
           npm run build
-          cd ../flagia-backend
-          npm ci --verbose
-          npm install
+
+      - name: Build backend
+        working-directory: flagia-backend
+        run: |
+          npm ci --no-audit --no-fund
           npm run build
 
-      - name: Publish build to the live app directory
-        # IMPORTANT: pm2 runs the app from $HOME/server/Flagia, NOT from this
-        # runner's workspace ($GITHUB_WORKSPACE). Previously the workflow built
-        # here and ran `pm2 restart all` without copying the result over, so pm2
-        # kept restarting STALE code (old bundle + old backend). Sync the freshly
-        # built app into the live directory. Overlay copy (no delete) so any
-        # runtime-only files already in the live dir are preserved.
+      - name: Package release
         run: |
-          set -e
-          APP="$HOME/server/Flagia"
-          mkdir -p "$APP/flagia-backend" "$APP/flagia-frontend"
-          if command -v rsync >/dev/null 2>&1; then
-            rsync -a "$GITHUB_WORKSPACE/flagia-backend/"  "$APP/flagia-backend/"
-            rsync -a "$GITHUB_WORKSPACE/flagia-frontend/" "$APP/flagia-frontend/"
-          else
-            cp -a "$GITHUB_WORKSPACE/flagia-backend/."  "$APP/flagia-backend/"
-            cp -a "$GITHUB_WORKSPACE/flagia-frontend/." "$APP/flagia-frontend/"
-          fi
-          echo "Published build to $APP"
+          tar -czf "${GITHUB_SHA}.tar.gz" \
+            ecosystem.config.cjs \
+            pm2_startup.sh \
+            scripts \
+            ops \
+            flagia-frontend/dist \
+            flagia-backend/dist \
+            flagia-backend/package.json \
+            flagia-backend/package-lock.json \
+            flagia-backend/mysql_dump.sql \
+            flagia-backend/migrations
 
-      - name: Apply database migrations
-        continue-on-error: true
+      - name: Configure SSH
         env:
-          DB_HOST: 127.0.0.1
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_MIGRATE_USER }}
-          DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
         run: |
-          if ! command -v mysql >/dev/null 2>&1; then
-            echo "mysql client not found; backend boot ensureSchema will migrate."
-            exit 0
-          fi
-          if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
-            echo "DB migration secrets not set; backend boot ensureSchema will migrate."
-            exit 0
-          fi
-          shopt -s nullglob
-          for f in "$HOME/server/Flagia/flagia-backend/migrations/"*.sql; do
-            echo "Applying migration: $f"
-            mysql --host="$DB_HOST" --user="$DB_USER" --password="$DB_PASS" "$DB_NAME" < "$f"
-          done
-          echo "Migrations applied."
+          test -n "$EC2_HOST"
+          test -n "$EC2_SSH_KEY"
+          test -n "$EC2_KNOWN_HOSTS"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/flagia_ec2"
+          chmod 0600 "$HOME/.ssh/flagia_ec2"
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
 
-      # Provision a MySQL user for remote (Cloudflare Tunnel) access. The tunnel
-      # proxies tcp://localhost:3306, so connections arrive from 127.0.0.1 — hence
-      # the '@127.0.0.1' host. Idempotent; skips unless the secrets are set. Uses
-      # the privileged migration account (which has GRANT OPTION) to create it.
-      - name: Provision remote (tunnel) DB user
-        continue-on-error: true
+      - name: Upload release
         env:
-          DB_HOST: 127.0.0.1
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_ADMIN_USER: ${{ secrets.DB_MIGRATE_USER }}
-          DB_ADMIN_PASS: ${{ secrets.DB_MIGRATE_PASS }}
-          REMOTE_USER: ${{ secrets.DB_REMOTE_USER }}
-          REMOTE_PASS: ${{ secrets.DB_REMOTE_PASS }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          if ! command -v mysql >/dev/null 2>&1; then echo "no mysql client"; exit 0; fi
-          if [ -z "$DB_ADMIN_USER" ] || [ -z "$DB_NAME" ]; then
-            echo "Admin DB secrets not set; skipping remote user provisioning."; exit 0
-          fi
-          if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_PASS" ]; then
-            echo "DB_REMOTE_USER / DB_REMOTE_PASS not set; skipping remote user provisioning."; exit 0
-          fi
-          set -e  # surface a real failure (the step is continue-on-error, so it won't block the deploy)
-          SQL_FILE="$(mktemp)"
-          {
-            printf "CREATE USER IF NOT EXISTS '%s'@'127.0.0.1' IDENTIFIED BY '%s';\n" "$REMOTE_USER" "$REMOTE_PASS"
-            printf "ALTER USER '%s'@'127.0.0.1' IDENTIFIED BY '%s';\n" "$REMOTE_USER" "$REMOTE_PASS"
-            printf "GRANT ALL PRIVILEGES ON %s.* TO '%s'@'127.0.0.1';\n" "$DB_NAME" "$REMOTE_USER"
-            printf "FLUSH PRIVILEGES;\n"
-          } > "$SQL_FILE"
-          mysql --host="$DB_HOST" --user="$DB_ADMIN_USER" --password="$DB_ADMIN_PASS" < "$SQL_FILE"
-          rm -f "$SQL_FILE"
-          echo "Provisioned ${REMOTE_USER}@127.0.0.1 with ALL PRIVILEGES on ${DB_NAME}.*"
+          remote_user="${EC2_USER:-ubuntu}"
+          ssh -i "$HOME/.ssh/flagia_ec2" "$remote_user@$EC2_HOST" \
+            "mkdir -p /home/ubuntu/Flagia/incoming"
+          scp -i "$HOME/.ssh/flagia_ec2" "${GITHUB_SHA}.tar.gz" \
+            "$remote_user@$EC2_HOST:/home/ubuntu/Flagia/incoming/${GITHUB_SHA}.tar.gz"
 
-      - name: Restart PM2 process manager
-        run: pm2 restart all
-
-      # Re-score every submitted/force-closed submission with the freshly
-      # deployed engine, so engine changes apply to existing submissions too.
-      # Runs from the live dir's compiled dist. Best-effort: never blocks deploy.
-      - name: Regrade existing submissions
-        continue-on-error: true
+      - name: Activate release
         env:
-          DB_USER: ${{ secrets.DB_MIGRATE_USER }}
-          DB_PASS: ${{ secrets.DB_MIGRATE_PASS }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          if [ -z "$DB_USER" ]; then
-            echo "DB secrets not set; skipping regrade."
-            exit 0
-          fi
-          cd "$HOME/server/Flagia/flagia-backend"
-          SQL_USER="$DB_USER" SQL_PW="$DB_PASS" node dist/regrade.js
+          remote_user="${EC2_USER:-ubuntu}"
+          ssh -i "$HOME/.ssh/flagia_ec2" "$remote_user@$EC2_HOST" \
+            "bash -s -- '$GITHUB_SHA'" < scripts/receive-deploy.sh
+
+      - name: Verify public endpoints
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://api.flagia.kr/api/health
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 \
+            https://flagia.kr/ >/dev/null

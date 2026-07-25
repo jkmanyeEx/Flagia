@@ -1,9 +1,15 @@
-tunnel: e3054d16-c6b3-4003-b425-61c7d2d464b3
-credentials-file: /Users/jkmanye/.cloudflared/e3054d16-c6b3-4003-b425-61c7d2d464b3.json
-
+# Reference routes only.
+#
+# Production uses a remotely-managed Cloudflare Tunnel installed with a rotated
+# token. The actual public-hostname routes are managed in the Cloudflare
+# dashboard, so this file intentionally contains no tunnel ID or credentials.
 ingress:
   - hostname: flagia.devmeko.xyz
-    service: http://localhost:5173
+    service: http://127.0.0.1:5173
   - hostname: flagiaapi.devmeko.xyz
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
+  - hostname: flagia.kr
+    service: http://127.0.0.1:5173
+  - hostname: api.flagia.kr
+    service: http://127.0.0.1:3000
   - service: http_status:404

@@ -15,13 +15,14 @@ interface TelemetryEvent {
     seq: number;
     timestamp: number;
     iki: number;
-    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect';
+    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect' | 'snapshot';
     meta: {
         key?: string;
         cursorPosition?: number;
         pasteLength?: number;
         actionType?: string;
         internal?: boolean;
+        text?: string;
     };
     currentHash: string;
 }
@@ -61,6 +62,15 @@ interface AnalysisResult {
         label: string;
         points: number;
     }[];
+    transcription?: {
+        basis: 'none' | 'divergence' | 'rr' | 'template';
+        triggered: boolean;
+        points: number;
+        rows: {
+            label: string;
+            value: string;
+        }[];
+    };
     flagStatus: 'GREEN' | 'AMBER' | 'RED';
     coefficientOfVariation: number;
     revisionRatio: number;

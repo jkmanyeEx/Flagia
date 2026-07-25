@@ -1,111 +1,68 @@
-# Workspace Guide: Remote Server Diagnostics & DB/Log Access
+# Workspace guide: production operations
 
-When direct SSH or SQL port access to the production server is unavailable, this workspace uses a secure, out-of-band diagnostics pipeline built on **GitHub Actions Self-Hosted Runners** and manual workflow triggers.
+The production application runs on AWS EC2 and is deployed from a GitHub-hosted
+Actions runner over SSH. There is no self-hosted runner on the server.
 
----
+For the complete deployment and operations reference, see
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
-## 🛠️ How It Works (The Architecture)
+## Runtime layout
 
-```mermaid
-sequenceDiagram
-    actor Developer as Dev / AI Agent
-    participant GitHub as GitHub Actions UI
-    participant Runner as Self-Hosted Runner (Prod Host)
-    participant PM2 as PM2 (App Server)
-    participant DB as MySQL (Localhost)
-
-    Developer->>GitHub: Trigger "Server Diagnostics" (workflow_dispatch)
-    GitHub->>Runner: Dispatch job to 'self-hosted' runner
-    activate Runner
-    Runner->>PM2: Read logs / status (pm2 logs/list)
-    PM2-->>Runner: Log output / status table
-    Runner->>DB: Query DB via mysql CLI (127.0.0.1)
-    DB-->>Runner: SQL Query Results
-    Runner-->>GitHub: Print stdout/stderr to runner console
-    deactivate Runner
-    GitHub-->>Developer: View logs on GitHub website
+```text
+/home/ubuntu/Flagia/
+├── current -> releases/<commit-or-release-id>
+├── releases/             # three newest releases retained
+├── incoming/             # temporary upload location
+├── shared/.env           # server-only runtime secrets, mode 0600
+└── backups/mysql/        # seven days, maximum 2 GiB
 ```
 
-### 1. The Self-Hosted Runner
-The production server hosts a GitHub Actions runner configured with `runs-on: self-hosted`. 
-* Because the runner runs directly on the production machine, it has local shell access to files, processes, and localhost-bound databases.
-* It operates inside the production network security perimeter, eliminating the need to expose ports like `22` (SSH) or `3306` (MySQL) to the public internet.
+Local services:
 
-### 2. Manual Diagnostics Workflow (`debug.yml`)
-The workflow is defined in [.github/workflows/debug.yml](file:///Users/jkmanye/Desktop/server/Flagia/.github/workflows/debug.yml). It is configured with `workflow_dispatch`, allowing it to be triggered manually from the GitHub UI under the **Actions** tab.
+- Frontend: `127.0.0.1:5173`
+- Backend and WebSocket: `127.0.0.1:3000`
+- MySQL: `127.0.0.1:3306`
+- Public ingress: Cloudflare Tunnel
 
-The workflow provides a choice input (`target`) to target specific inspection modules:
-* `all`: Runs all checks listed below.
-* `pm2`: Inspects PM2 application list, status, memory usage, and execution directories.
-* `logs`: Fetches the last 60 lines of stdout and stderr logs for `flagia-backend`.
-* `db`: Runs read-only queries against the local database.
-* `health`: Tests HTTP endpoints (`/api/health`) on backend ports.
-* `git`: Checks local repository HEAD commit hash and working tree status.
-* `submissions`: Queries the latest student submissions and keystroke telemetry blobs.
-* `regrade`: Runs the backend regrading script to re-evaluate submissions.
+## Routine diagnostics
 
----
+Connect using the EC2 SSH key and inspect:
 
-## 💾 Database Inspection (Without SQL Access)
+```bash
+pm2 status
+pm2 logs --lines 100 --nostream
+curl http://127.0.0.1:3000/api/health
+systemctl status mysql cloudflared pm2-ubuntu
+systemctl list-timers --all | grep flagia
+journalctl -u flagia-health.service --since today
+ls -lh /home/ubuntu/Flagia/backups/mysql
+```
 
-The workflow runs SQL queries by invoking the `mysql` command-line client on the host.
+The systemd health timer runs every two minutes and verifies the frontend,
+backend, MySQL, PM2 processes, disk space, and available memory. Failures are
+written to the journal with the `flagia-monitor` tag:
 
-### DB Connection Method
-* **Host**: `127.0.0.1` (connections originate locally, satisfying host restrictions).
-* **Credentials**: DB credentials (`DB_NAME`, `DB_MIGRATE_USER`, `DB_MIGRATE_PASS`) are stored in **GitHub Repository Secrets** and injected as environment variables during workflow execution.
-* **Format**: Queries are run with the `-t` (table format) flag for easy markdown-like rendering in the action console:
-  ```bash
-  mysql --host=127.0.0.1 --user=$DB_USER --password=$DB_PASS $DB_NAME -t -e "SELECT ..."
-  ```
+```bash
+journalctl -t flagia-monitor
+```
 
-### Common Debugging Queries Used in Workflows
-* **Check User Profiles & Roles**:
-  ```sql
-  SELECT id, name, email, role, created_at FROM users WHERE role='ADMIN' ORDER BY created_at;
-  ```
-* **Submission Overview**:
-  ```sql
-  SELECT s.id, s.status, LENGTH(s.final_markdown) AS md_len, 
-         (SELECT COUNT(*) FROM sessions se WHERE se.submission_id=s.id) AS sessions 
-  FROM submissions s 
-  JOIN users u ON s.student_id=u.id 
-  WHERE u.email='student@example.com' 
-  ORDER BY s.created_at DESC LIMIT 3;
-  ```
-* **Deconstruct Keystroke Telemetry (JSON)**:
-  Extract typing rhythm statistics or specific event frequencies directly from the `events_blob` JSON column:
-  ```sql
-  SELECT jt.k AS key_val, COUNT(*) AS cnt 
-  FROM sessions se 
-  JOIN submissions s ON se.submission_id=s.id 
-  JOIN users u ON s.student_id=u.id 
-  JOIN JSON_TABLE(se.events_blob, '$[*]' COLUMNS (
-      typ VARCHAR(20) PATH '$.type', 
-      k VARCHAR(24) PATH '$.meta.key'
-  )) jt 
-  WHERE u.email='student@example.com' AND jt.typ='keydown' 
-  GROUP BY jt.k 
-  ORDER BY cnt DESC LIMIT 15;
-  ```
+## Database access
 
----
+Database credentials are deliberately not stored in GitHub or the repository.
+They remain in `/home/ubuntu/Flagia/shared/.env`. To use the MySQL client
+interactively without printing the password:
 
-## 📝 Log Inspection (Without SSH)
+```bash
+set -a
+. /home/ubuntu/Flagia/shared/.env
+set +a
+mysql -h "$DB_HOST" -u "$DB_USER" -p "$DB_NAME"
+```
 
-To read application output logs:
-1. The self-hosted runner executes standard `pm2` command-line utilities.
-2. It fetches historical logs using the `--nostream` flag to prevent the workflow from hanging.
-   ```bash
-   pm2 logs flagia-backend --out --lines 60 --nostream 2>/dev/null | tail -60
-   pm2 logs flagia-backend --err --lines 60 --nostream 2>/dev/null | tail -60
-   ```
+Daily compressed dumps are created by `flagia-backup.timer`. Run an immediate
+backup with:
 
----
-
-## 🚀 How to Execute Diagnostics
-
-1. Navigate to the GitHub repository online.
-2. Go to the **Actions** tab.
-3. Select the **Server Diagnostics** workflow on the left sidebar.
-4. Click **Run workflow**, choose the desired **target** input (e.g., `db` or `logs`), and run.
-5. Open the running/completed workflow run to inspect stdout under the **Diagnostics** step.
+```bash
+sudo systemctl start flagia-backup.service
+sudo systemctl status flagia-backup.service
+```

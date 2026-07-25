@@ -11,8 +11,26 @@ import { ensureSchema } from './migrate';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '127.0.0.1';
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+  'https://flagia.kr,https://www.flagia.kr,http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.set('trust proxy', 1);
+app.use(cors({
+  origin(origin, callback) {
+    // Requests without an Origin header are server-to-server/local health checks.
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('CORS origin is not allowed'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Health check
@@ -45,8 +63,8 @@ async function start() {
     console.log('🔧 Ensuring schema is up to date...');
     await ensureSchema();
 
-    server.listen(PORT, () => {
-      console.log(`🚀 Flagia backend running on :${PORT}`);
+    server.listen(PORT, HOST, () => {
+      console.log(`🚀 Flagia backend running on ${HOST}:${PORT}`);
     });
   } catch (err) {
     console.error('❌ Failed to start:', err);

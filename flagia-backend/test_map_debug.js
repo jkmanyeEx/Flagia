@@ -17,10 +17,10 @@ function mapPmPosToPlainIndex(text, pmPos) {
 
 async function main() {
   const connection = await mysql.createConnection({
-    host: 'localhost',
-    user: 'devmeko',
-    password: 'Qqqq1111!',
-    database: 'flagia'
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || process.env.SQL_USER,
+    password: process.env.DB_PASSWORD || process.env.SQL_PW,
+    database: process.env.DB_NAME || 'flagia'
   });
 
   const sessId = '46e0977c-dc82-4ed3-9816-7132cbbd647e';

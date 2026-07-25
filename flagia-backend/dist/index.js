@@ -15,7 +15,24 @@ const database_1 = __importDefault(require("./database"));
 const migrate_1 = require("./migrate");
 const app = (0, express_1.default)();
 const PORT = parseInt(process.env.PORT || '3000', 10);
-app.use((0, cors_1.default)({ origin: true, credentials: true }));
+const HOST = process.env.HOST || '127.0.0.1';
+const allowedOrigins = (process.env.CORS_ORIGINS ||
+    'https://flagia.kr,https://www.flagia.kr,http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+app.set('trust proxy', 1);
+app.use((0, cors_1.default)({
+    origin(origin, callback) {
+        // Requests without an Origin header are server-to-server/local health checks.
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('CORS origin is not allowed'));
+    },
+    credentials: true,
+}));
 app.use(express_1.default.json({ limit: '10mb' }));
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -41,8 +58,8 @@ async function start() {
         conn.release();
         console.log('🔧 Ensuring schema is up to date...');
         await (0, migrate_1.ensureSchema)();
-        server.listen(PORT, () => {
-            console.log(`🚀 Flagia backend running on :${PORT}`);
+        server.listen(PORT, HOST, () => {
+            console.log(`🚀 Flagia backend running on ${HOST}:${PORT}`);
         });
     }
     catch (err) {

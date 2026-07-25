@@ -199,10 +199,10 @@ function runReplay(events, templateText) {
 
 async function main() {
   const connection = await mysql.createConnection({
-    host: 'localhost',
-    user: 'devmeko',
-    password: 'Qqqq1111!',
-    database: 'flagia'
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || process.env.SQL_USER,
+    password: process.env.DB_PASSWORD || process.env.SQL_PW,
+    database: process.env.DB_NAME || 'flagia'
   });
 
   const sessionIds = ['5684b3bd-1d38-4372-a4a4-f600a7191a53', '46e0977c-dc82-4ed3-9816-7132cbbd647e'];

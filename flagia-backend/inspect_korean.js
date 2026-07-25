@@ -2,10 +2,10 @@ const mysql = require('mysql2/promise');
 
 async function main() {
   const connection = await mysql.createConnection({
-    host: 'localhost',
-    user: 'devmeko',
-    password: 'Qqqq1111!',
-    database: 'flagia'
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || process.env.SQL_USER,
+    password: process.env.DB_PASSWORD || process.env.SQL_PW,
+    database: process.env.DB_NAME || 'flagia'
   });
 
   const [rows] = await connection.execute(

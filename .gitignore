@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+
+flagia-frontend/node_modules/
+flagia-frontend/dist/
+flagia-backend/node_modules/
+
+*.log
+.DS_Store
+
+# Local deployment material
+.deploy/
+*.pem
+

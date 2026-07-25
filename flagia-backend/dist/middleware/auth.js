@@ -8,7 +8,15 @@ exports.verifyToken = verifyToken;
 exports.authMiddleware = authMiddleware;
 exports.teacherOnly = teacherOnly;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const JWT_SECRET = process.env.JWT_SECRET || 'flagia_jwt_secret_2024_kr';
+function getJwtSecret() {
+    if (process.env.JWT_SECRET)
+        return process.env.JWT_SECRET;
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET must be set in production');
+    }
+    return 'flagia_development_only_secret';
+}
+const JWT_SECRET = getJwtSecret();
 function signToken(payload) {
     return jsonwebtoken_1.default.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 }

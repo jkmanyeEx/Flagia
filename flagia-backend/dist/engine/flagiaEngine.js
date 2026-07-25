@@ -563,6 +563,98 @@ function getExpectedKeystrokeCount(text) {
     }
     return Math.max(1, count);
 }
+// ── Fuzzy text similarity (NFC + character n-grams) ──
+// Used to compare texts tolerantly of small typos. NFC-normalize so composed vs.
+// decomposed Hangul match (한 == ㅎㅏㄴ); strip whitespace so Korean 띄어쓰기
+// variance doesn't matter; character n-grams are typo-tolerant (a single typo
+// perturbs only ~n grams) and script-agnostic (Latin/Hangul/CJK/emoji alike).
+function normSim(s) {
+    return (s || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
+}
+function ngramSet(normalized, n) {
+    const out = new Set();
+    for (let i = 0; i + n <= normalized.length; i++)
+        out.add(normalized.slice(i, i + n));
+    return out;
+}
+// Directional containment: share of A's n-grams that also appear in B (0..1).
+// ngramContainment(final, template) ≈ "how much of the final text is the template".
+function ngramContainment(a, b, n = 3) {
+    const A = ngramSet(normSim(a), n);
+    if (A.size === 0)
+        return 0;
+    const B = ngramSet(normSim(b), n);
+    let hit = 0;
+    for (const g of A)
+        if (B.has(g))
+            hit++;
+    return hit / A.size;
+}
+function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0)
+        return n;
+    if (n === 0)
+        return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+        const cur = [i];
+        for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+        }
+        prev = cur;
+    }
+    return prev[n];
+}
+// ── Content divergence (genuine reworking only) ──
+// How much GENUINELY DIFFERENT content the student wrote then abandoned: words
+// that appeared mid-draft (in a snapshot), are absent from the final, AND aren't
+// just a typo / IME-composition fragment of a final word. Excluding that churn
+// is what makes this robust for Korean — IME intermediate syllables (쉬→쉼) and
+// corrected typos no longer masquerade as "reworded content". Genuine rewording
+// (writing a phrase, then replacing it with a DIFFERENT one) still counts.
+function computeDivergence(snapshotTexts, finalText) {
+    const tokenize = (s) => ((s || '').normalize('NFC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+    const finalSet = new Set(tokenize(finalText));
+    if (finalSet.size === 0)
+        return 0;
+    const finalArr = [...finalSet];
+    // How many snapshots each non-final token appears in. Genuinely written-then-
+    // abandoned content persists across several 2-second snapshots; Korean IME
+    // composition states and fleeting typos flicker in just ONE snapshot, so a
+    // persistence floor (≥ 2 snapshots) strips that transient noise.
+    const seenCount = new Map();
+    for (const snap of snapshotTexts) {
+        const toks = new Set(tokenize(snap));
+        for (const w of toks)
+            if (w.length >= 2 && !finalSet.has(w))
+                seenCount.set(w, (seenCount.get(w) || 0) + 1);
+    }
+    // A candidate is churn (not genuine rework) if it's a prefix/build-up of a
+    // final word or a near-miss spelling of one.
+    const isChurn = (w) => {
+        for (const f of finalArr) {
+            if (f.startsWith(w) || w.startsWith(f))
+                return true;
+            if (Math.abs(f.length - w.length) <= 2) {
+                const tol = Math.max(1, Math.round(Math.max(w.length, f.length) * 0.3));
+                if (levenshtein(w, f) <= tol)
+                    return true;
+            }
+        }
+        return false;
+    };
+    let genuine = 0;
+    for (const [w, cnt] of seenCount) {
+        if (cnt < 2)
+            continue; // transient flicker (IME/typo) → not real rework
+        if (isChurn(w))
+            continue;
+        genuine++;
+    }
+    return genuine / finalSet.size;
+}
 /**
  * Main analysis function
  */
@@ -801,92 +893,129 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     const baseScore = Math.round(Math.max(0, Math.min(100, weightedSum)) * 100) / 100;
     const scoreAdjustments = [];
     let flagiaScore = baseScore;
-    // ── Linear-transcription (copy-typing) structural penalty ──
-    // The hardest cheat: read AI text off a second screen and type it by hand.
-    // The keystrokes are genuinely human, so Cv/rhythm look fine and there's no
-    // paste — the weighted sum stays green. But a SUBSTANTIAL, polished text typed
-    // almost verbatim (very low revision) is the transcription signature: real
-    // composition is messy (deletes/rewrites → higher RR). When that pattern holds
-    // and nothing meaningful was pasted, scale the score down so it can no longer
-    // pass on healthy rhythm alone.
+    // ── Copy-typing (transcription) structural penalty ──
+    // The hardest cheat: read AI text off a second screen and type it by hand — or
+    // type the provided template verbatim. Keystrokes are genuinely human, so
+    // Cv/rhythm look fine and there's no paste, and a cheater can inflate the
+    // revision ratio (RR) with fake delete-and-retype "edits" to look messy.
     //
-    // Tuned to bite only CLEAR transcription, so genuine writers pass easily:
-    //   - Substance gate: expected KEYSTROKES (typing effort, script-fair) ≥ 400
-    //     (~160 Hangul / 400 Latin chars) — short answers are never second-guessed.
-    //   - RR taper to 1.45 only (was 1.6): a writer with any real revision escapes.
-    //   - Max reduction 55% and gentler, higher caps — the penalty nudges toward
-    //     RED for blatant cases instead of slamming everything borderline.
+    // RR only measures keystroke VOLUME, not whether the writing changed, so it's
+    // both over-sensitive (clean honest writers look linear) and gameable (fake
+    // edits). The primary signal here is CONTENT DIVERGENCE from the periodic text
+    // snapshots: how much text the student wrote then abandoned/reworded (n-grams
+    // that appeared mid-draft but aren't in the final). Genuine writing diverges a
+    // lot; copy-typing — even with fake edits or small typos — converges verbatim
+    // to the final, so divergence ≈ 0. Fuzzy (NFC + char n-gram) comparison makes
+    // it typo-tolerant and script-fair (Korean included).
     const pastedShare = effectiveTextLength > 0 ? totalPastedLength / effectiveTextLength : 0;
+    // Content divergence from snapshots (−1 = no snapshots → RR fallback).
+    const snapshotTexts = events
+        .filter(e => e.type === 'snapshot' && typeof e.meta?.text === 'string')
+        .map(e => e.meta.text)
+        .filter(t => t.trim().length > 0);
+    const hasSnapshots = snapshotTexts.length >= 2;
+    // Genuine-reworking divergence (typo/IME churn filtered out — Korean-safe).
+    const divergenceRatio = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
+    // Fuzzy template match: share of the final text's n-grams contained in the
+    // provided template (typo-tolerant). High ⇒ the student largely reproduced the
+    // prompt/template by hand.
+    const templateSim = plainTemplate.length > 20 ? ngramContainment(plainText, plainTemplate, 3) : 0;
+    const substantial = effectiveExpectedKeystrokes >= 400 && plainText.length >= 120;
+    // The fake-edit (acting) case is gated on actual typing EFFORT, not final
+    // length: lots of keystrokes that produced ~no content change is suspicious
+    // even for a short final text (e.g. a short essay typed with heavy fake churn).
+    const actingEligible = totalKeydowns >= 300 && plainText.length >= 50;
+    const lowPaste = pastedShare < 0.15;
     let transcriptionSeverity = 0;
-    if (effectiveExpectedKeystrokes >= 400 && revisionRatio >= 1.0 && revisionRatio < 1.45 && pastedShare < 0.15) {
-        transcriptionSeverity = Math.min(1, (1.45 - revisionRatio) / 0.45); // RR 1.45→0 … 1.0→1
-        const penaltyFactor = 0.55 * transcriptionSeverity; // Scale by up to 55% depending on severity
-        let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
-        // Hard caps only for unmistakable transcription (very low RR):
-        //   RR < 1.2  → near-linear, clear transcription → cap 48.
-        //   RR < 1.4  → strong signal → cap 58.
-        //   1.4–1.45  → borderline: only the gentle graduated reduction, no hard cap.
-        if (revisionRatio < 1.2) {
-            penalized = Math.min(penalized, 48);
+    let actingFactor = 0;
+    let detectBasis = 'none';
+    if (lowPaste) {
+        if (substantial && templateSim > 0.8 && isSubstantiallyTyped) {
+            // 1) Reproduced the provided template by hand (even with minor changes).
+            transcriptionSeverity = Math.min(1, templateSim);
+            detectBasis = 'template';
         }
-        else if (revisionRatio < 1.4) {
-            penalized = Math.min(penalized, 58);
+        else if (hasSnapshots && actingEligible) {
+            // 2) FAKE-EDIT "acting" (the robust catch): the student appears to revise a
+            //    lot (high RR ⇒ lots of keystrokes beyond the final length) yet the
+            //    content barely DIVERGED from the final (≈ nothing was reworded/abandoned).
+            //    Genuine revision at this RR would have produced lots of divergence;
+            //    delete-and-retype-the-same disguise produces ~none. We deliberately do
+            //    NOT penalize low divergence alone — a clean honest writer who composes
+            //    linearly also has low divergence and must not be flagged. Only the
+            //    high-RR + low-divergence COMBINATION is unambiguous deception.
+            if (revisionRatio >= 1.25 && divergenceRatio >= 0 && divergenceRatio < 0.05) {
+                detectBasis = 'divergence';
+                const divShort = (0.05 - divergenceRatio) / 0.05; // 0..1 (how empty the "edits" were)
+                const claimed = Math.min(1, (revisionRatio - 1.25) / 1.0); // RR 1.25→0 … 2.25→1
+                // Severity scales with how far past the 1.25 boundary the RR is, so the
+                // borderline (1.25) gets a moderate hit and blatant fake-editing is hammered.
+                transcriptionSeverity = Math.min(1, 0.25 + divShort * 0.35 + claimed * 0.4);
+                // "More acting penalty": the busier the fake editing, the bigger the boost.
+                actingFactor = Math.min(0.5, 0.1 + (revisionRatio - 1.25) * 0.3);
+            }
+        }
+        else if (substantial && !hasSnapshots && revisionRatio >= 1.0 && revisionRatio < 1.35) {
+            // 3) FALLBACK (no snapshots): RR-based, deliberately LIGHT (less RR penalty).
+            transcriptionSeverity = Math.min(1, (1.35 - revisionRatio) / 0.35);
+            detectBasis = 'rr';
+        }
+    }
+    let transcriptionPoints = 0;
+    if (transcriptionSeverity > 0) {
+        // Base reduction leans LESS on RR than before; acting (fake-edit) adds on top.
+        const baseFactor = detectBasis === 'template' ? 0.75 : (detectBasis === 'rr' ? 0.45 : 0.55);
+        const penaltyFactor = Math.min(0.9, baseFactor * transcriptionSeverity + actingFactor);
+        let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
+        const sev = Math.min(1, transcriptionSeverity + actingFactor);
+        if (detectBasis === 'template') {
+            penalized = Math.min(penalized, transcriptionSeverity > 0.85 ? 38 : 48);
+        }
+        else if (detectBasis === 'divergence') {
+            if (sev > 0.7)
+                penalized = Math.min(penalized, 42);
+            else if (sev > 0.4)
+                penalized = Math.min(penalized, 55);
+        }
+        else {
+            // rr fallback: lighter caps (less RR penalty)
+            if (sev > 0.6)
+                penalized = Math.min(penalized, 55);
+            else if (sev > 0.3)
+                penalized = Math.min(penalized, 65);
         }
         const delta = Math.round((penalized - baseScore) * 100) / 100;
         if (delta < 0) {
-            scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점', points: delta });
+            transcriptionPoints = delta;
+            const label = detectBasis === 'template'
+                ? '베껴쓰기 감점 — 제시문 그대로 타이핑'
+                : (actingFactor > 0
+                    ? '베껴쓰기 감점 — 편집 위장(복사 후 가짜 수정)'
+                    : '베껴쓰기(전사) 패턴 감점');
+            scoreAdjustments.push({ label, points: delta });
             flagiaScore = penalized;
         }
     }
-    // ── Template copy-typing structural penalty ──
-    // When the student receives a template and types it verbatim by hand, the
-    // linear-transcription check above can't catch it: non-content keydowns
-    // (Shift for ㅃ/ㅉ/ㄸ/ㄲ/ㅆ, Backspace for corrections, navigation) inflate
-    // totalKeydowns far above 1.6× expected, so revisionRatio lands in the
-    // "healthy composition" zone and the penalty never fires.
-    // Detect this case directly: >80% of the final text matches the template
-    // AND the student actually typed (>50% of expected keystrokes). This
-    // combination is uniquely the template copy-typing signature — a student
-    // who left the template untouched would have very few keydowns.
-    //
-    // Two tiers:
-    //   A. Pure copy-typing:  >80% of final text IS the template AND student
-    //      typed substantially → hardest penalty.
-    //   B. Mixed copy-typing: template is >30% of final text, >80% of the
-    //      template is preserved, AND total keydowns are >3× the expected
-    //      keystrokes for just the non-template portion → the "excess"
-    //      keydowns can only be explained by the student also having typed
-    //      the pre-populated template. Penalty scales with template coverage.
-    const templatePreservationRate = plainTemplate.length > 0
-        ? preservedTemplateLength / plainTemplate.length : 0;
-    if (transcriptionSeverity === 0 && preservedTemplateLength >= 200
-        && plainText.length >= 200 && pastedShare < 0.15) {
-        const templateCoverage = preservedTemplateLength / plainText.length;
-        if (templateCoverage > 0.8 && isSubstantiallyTyped) {
-            // Tier A: template dominates the final text → classic copy-typing
-            transcriptionSeverity = templateCoverage;
-        }
-        else if (templateCoverage > 0.3 && templatePreservationRate > 0.8
-            && effectiveExpectedKeystrokes > 0
-            && totalKeydowns > effectiveExpectedKeystrokes * 3.0) {
-            // Tier B: significant template preserved + keydowns far exceed what's
-            // needed for original writing → student typed the template too
-            transcriptionSeverity = templateCoverage;
-        }
-        if (transcriptionSeverity > 0) {
-            const penaltyFactor = 0.75 * transcriptionSeverity;
-            let penalized = Math.round(baseScore * (1 - penaltyFactor) * 100) / 100;
-            if (transcriptionSeverity > 0.7)
-                penalized = Math.min(penalized, 38);
-            else if (transcriptionSeverity > 0.4)
-                penalized = Math.min(penalized, 45);
-            const delta = Math.round((penalized - baseScore) * 100) / 100;
-            if (delta < 0) {
-                scoreAdjustments.push({ label: '베껴쓰기(전사) 패턴 감점 — 제시문 그대로 타이핑', points: delta });
-                flagiaScore = penalized;
-            }
-        }
-    }
+    // Per-section breakdown for the analysis UI's "minus" area.
+    const basisKo = {
+        none: '해당 없음', divergence: '내용 발산도(스냅샷)', rr: '수정 비율(스냅샷 없음)', template: '제시문 일치',
+    };
+    const transcription = {
+        basis: detectBasis,
+        triggered: transcriptionPoints < 0,
+        points: transcriptionPoints,
+        rows: [
+            { label: '판정 근거', value: basisKo[detectBasis] },
+            {
+                label: '내용 발산도 (낮을수록 베껴쓰기 의심)',
+                value: divergenceRatio >= 0 ? `${(divergenceRatio * 100).toFixed(1)}%` : '스냅샷 없음',
+            },
+            { label: '수정 비율 (RR)', value: revisionRatio.toFixed(2) },
+            { label: '제시문 일치율', value: `${Math.round(templateSim * 100)}%` },
+            { label: '편집 위장(acting) 가중', value: actingFactor > 0 ? `+${actingFactor.toFixed(2)}` : '없음' },
+            { label: '심각도', value: Math.min(1, transcriptionSeverity + actingFactor).toFixed(2) },
+        ],
+    };
     // ── Flag Status ──
     let flagStatus;
     if (flagiaScore >= thresholds.green) {
@@ -979,6 +1108,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         flagiaScore,
         baseScore,
         scoreAdjustments,
+        transcription,
         flagStatus,
         coefficientOfVariation: Math.round(cv * 1000000) / 1000000,
         revisionRatio: Math.round(revisionRatio * 10000) / 10000,

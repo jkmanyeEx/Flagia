@@ -47,6 +47,18 @@ function notifyAssignmentsUpdate() {
         }
     }
 }
+// Push a student's current plain-text content to any teacher/admin live-watching
+// that submission (used for real-time monitoring of in-progress writing).
+function broadcastSubmissionContent(submissionId, content) {
+    for (const client of clients.values()) {
+        if (client.watchSubmissionId === submissionId && client.ws.readyState === ws_1.WebSocket.OPEN) {
+            client.ws.send(JSON.stringify({
+                type: 'submission_content_update',
+                payload: { submissionId, content }
+            }));
+        }
+    }
+}
 function notifyClassroomMembersUpdate(classroomId) {
     for (const client of clients.values()) {
         if (client.classroomId === classroomId && client.ws.readyState === ws_1.WebSocket.OPEN) {
@@ -164,6 +176,54 @@ function initWebSocket(server) {
                             type: 'batch_ack',
                             payload: { received: events.length, total: existingEvents.length },
                         }));
+                        // Live sync: if this batch carried a snapshot, push the latest plain
+                        // text to any teacher/admin watching this submission.
+                        if (clientState.submissionId) {
+                            const snaps = events.filter((e) => e.type === 'snapshot' && typeof e.meta?.text === 'string');
+                            if (snaps.length > 0) {
+                                broadcastSubmissionContent(clientState.submissionId, snaps[snaps.length - 1].meta.text);
+                            }
+                        }
+                        break;
+                    }
+                    // ── Teacher/admin: start/stop live-watching a student's writing ──
+                    case 'watch_submission': {
+                        if (!clientState || (clientState.user.role !== 'TEACHER' && clientState.user.role !== 'ADMIN'))
+                            break;
+                        const { submissionId } = payload;
+                        if (!submissionId)
+                            break;
+                        clientState.watchSubmissionId = submissionId;
+                        // Send the current latest snapshot immediately so the teacher sees
+                        // the student's present content without waiting for the next flush.
+                        try {
+                            const [rows] = await database_1.default.query('SELECT events_blob FROM sessions WHERE submission_id = ? ORDER BY start_time ASC', [submissionId]);
+                            let latest = '';
+                            for (const r of rows) {
+                                if (!r.events_blob)
+                                    continue;
+                                try {
+                                    const evs = JSON.parse(r.events_blob);
+                                    for (const e of evs) {
+                                        if (e.type === 'snapshot' && typeof e.meta?.text === 'string')
+                                            latest = e.meta.text;
+                                    }
+                                }
+                                catch { /* skip */ }
+                            }
+                            if (latest) {
+                                ws.send(JSON.stringify({
+                                    type: 'submission_content_update',
+                                    payload: { submissionId, content: latest },
+                                }));
+                            }
+                        }
+                        catch { /* noop */ }
+                        break;
+                    }
+                    case 'unwatch_submission': {
+                        if (clientState)
+                            clientState.watchSubmissionId = undefined;
                         break;
                     }
                     // ── Teacher: kill-switch for an assignment ──
