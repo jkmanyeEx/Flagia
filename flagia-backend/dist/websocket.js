@@ -20,13 +20,26 @@ const ws_1 = require("ws");
 const uuid_1 = require("uuid");
 const database_1 = __importDefault(require("./database"));
 const auth_1 = require("./middleware/auth");
+const submissionFinalizer_1 = require("./services/submissionFinalizer");
 // Track connected clients
 const clients = new Map();
 // Track assignment rooms for teacher broadcasts
 const assignmentRooms = new Map();
+// Prevent two teacher sockets from running the same assignment-wide transition
+// concurrently. The database status predicate remains the final safety net.
+const forceSubmitInProgress = new Set();
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+function send(ws, type, payload) {
+    if (ws.readyState === ws_1.WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type, payload }));
+    }
+}
 function notifySubmissionsUpdate(assignmentId, studentId) {
     for (const client of clients.values()) {
-        if ((client.user?.role === 'TEACHER' && client.assignmentId === assignmentId) ||
+        if (((client.user?.role === 'TEACHER' || client.user?.role === 'ADMIN') &&
+            client.assignmentId === assignmentId) ||
             (studentId && client.user?.userId === studentId && client.user?.role === 'STUDENT')) {
             if (client.ws.readyState === ws_1.WebSocket.OPEN) {
                 client.ws.send(JSON.stringify({
@@ -100,18 +113,23 @@ function initWebSocket(server) {
                             break;
                         }
                         const { submissionId, assignmentId } = payload;
-                        clientState.submissionId = submissionId;
-                        clientState.assignmentId = assignmentId;
-                        // Verify that the submission is in progress and exists
-                        const [subRows] = await database_1.default.query('SELECT status FROM submissions WHERE id = ?', [submissionId]);
+                        // Verify status, assignment, and ownership before adding this socket
+                        // to a force-close room.
+                        const [subRows] = await database_1.default.query('SELECT status, assignment_id, student_id FROM submissions WHERE id = ?', [submissionId]);
                         const sub = subRows[0];
-                        if (!sub || sub.status !== 'IN_PROGRESS') {
+                        if (!sub ||
+                            sub.status !== 'IN_PROGRESS' ||
+                            sub.assignment_id !== assignmentId ||
+                            sub.student_id !== clientState.user.userId ||
+                            (clientState.user.role !== 'STUDENT' && clientState.user.role !== 'ADMIN')) {
                             ws.send(JSON.stringify({
                                 type: 'error',
-                                payload: { error: '진행 중인 제출물만 세션에 참여할 수 있습니다' }
+                                payload: { error: '본인의 진행 중인 제출물만 세션에 참여할 수 있습니다' }
                             }));
                             break;
                         }
+                        clientState.submissionId = submissionId;
+                        clientState.assignmentId = assignmentId;
                         // Create a new session record
                         const sessionId = (0, uuid_1.v4)();
                         const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || '';
@@ -152,7 +170,7 @@ function initWebSocket(server) {
                     case 'event_batch': {
                         if (!clientState?.sessionId)
                             break;
-                        const { events } = payload;
+                        const { events, batchId } = payload;
                         if (!Array.isArray(events) || events.length === 0)
                             break;
                         // Optional: verify hash chain integrity
@@ -174,7 +192,7 @@ function initWebSocket(server) {
                         await database_1.default.query('UPDATE sessions SET events_blob = ? WHERE id = ?', [JSON.stringify(existingEvents), clientState.sessionId]);
                         ws.send(JSON.stringify({
                             type: 'batch_ack',
-                            payload: { received: events.length, total: existingEvents.length },
+                            payload: { received: events.length, total: existingEvents.length, batchId },
                         }));
                         // Live sync: if this batch carried a snapshot, push the latest plain
                         // text to any teacher/admin watching this submission.
@@ -193,6 +211,15 @@ function initWebSocket(server) {
                         const { submissionId } = payload;
                         if (!submissionId)
                             break;
+                        const [watchRows] = await database_1.default.query(`SELECT a.teacher_id
+               FROM submissions s
+               JOIN assignments a ON a.id = s.assignment_id
+               WHERE s.id = ?`, [submissionId]);
+                        const watched = watchRows[0];
+                        if (!watched || (clientState.user.role !== 'ADMIN' && watched.teacher_id !== clientState.user.userId)) {
+                            send(ws, 'error', { error: '해당 제출물을 실시간으로 볼 권한이 없습니다' });
+                            break;
+                        }
                         clientState.watchSubmissionId = submissionId;
                         // Send the current latest snapshot immediately so the teacher sees
                         // the student's present content without waiting for the next flush.
@@ -226,32 +253,155 @@ function initWebSocket(server) {
                             clientState.watchSubmissionId = undefined;
                         break;
                     }
-                    // ── Teacher: kill-switch for an assignment ──
+                    // ── Teacher/admin: end every active writing session in an assignment ──
                     case 'force_submit': {
-                        if (!clientState || clientState.user.role !== 'TEACHER')
+                        const requestId = payload?.requestId;
+                        if (!clientState) {
+                            send(ws, 'force_submit_error', { requestId, code: 'UNAUTHENTICATED', error: '인증이 필요합니다' });
                             break;
-                        const { assignmentId: killAssignment } = payload;
-                        const room = assignmentRooms.get(killAssignment);
-                        if (!room)
-                            break;
-                        // Broadcast force_close to all students in this assignment
-                        for (const cid of room) {
-                            const student = clients.get(cid);
-                            if (student && student.ws.readyState === ws_1.WebSocket.OPEN) {
-                                student.ws.send(JSON.stringify({
-                                    type: 'force_close',
-                                    payload: { reason: '교사에 의해 강제 종료되었습니다' },
-                                }));
-                            }
                         }
-                        ws.send(JSON.stringify({ type: 'force_submit_ack', payload: { count: room.size } }));
+                        if (clientState.user.role !== 'TEACHER' && clientState.user.role !== 'ADMIN') {
+                            send(ws, 'force_submit_error', { requestId, code: 'FORBIDDEN', error: '교사 또는 관리자 권한이 필요합니다' });
+                            break;
+                        }
+                        const killAssignment = payload?.assignmentId;
+                        if (!killAssignment) {
+                            send(ws, 'force_submit_error', { requestId, code: 'INVALID_REQUEST', error: '과제 ID가 필요합니다' });
+                            break;
+                        }
+                        const [assignmentRows] = await database_1.default.query('SELECT id, teacher_id FROM assignments WHERE id = ?', [killAssignment]);
+                        const assignment = assignmentRows[0];
+                        if (!assignment) {
+                            send(ws, 'force_submit_error', { requestId, code: 'NOT_FOUND', error: '과제를 찾을 수 없습니다' });
+                            break;
+                        }
+                        if (clientState.user.role !== 'ADMIN' && assignment.teacher_id !== clientState.user.userId) {
+                            send(ws, 'force_submit_error', {
+                                requestId,
+                                code: 'FORBIDDEN',
+                                error: '본인이 만든 과제의 작성 세션만 종료할 수 있습니다',
+                            });
+                            break;
+                        }
+                        if (forceSubmitInProgress.has(killAssignment)) {
+                            send(ws, 'force_submit_error', {
+                                requestId,
+                                code: 'REQUEST_IN_PROGRESS',
+                                error: '이 과제의 작성 종료 요청이 이미 처리 중입니다',
+                            });
+                            break;
+                        }
+                        forceSubmitInProgress.add(killAssignment);
+                        try {
+                            const [initialRows] = await database_1.default.query('SELECT id, student_id, status FROM submissions WHERE assignment_id = ?', [killAssignment]);
+                            const initial = initialRows;
+                            const targets = initial.filter(submission => submission.status === 'IN_PROGRESS');
+                            const targetIds = new Set(targets.map(submission => submission.id));
+                            const initiallySubmitted = initial.filter(submission => submission.status === 'SUBMITTED' || submission.status === 'FORCE_CLOSED').length;
+                            // Send to every connected tab, but report unique submissions.
+                            const deliveredSubmissionIds = new Set();
+                            const room = assignmentRooms.get(killAssignment);
+                            if (room) {
+                                for (const cid of room) {
+                                    const student = clients.get(cid);
+                                    if (student?.submissionId &&
+                                        targetIds.has(student.submissionId) &&
+                                        student.ws.readyState === ws_1.WebSocket.OPEN) {
+                                        send(student.ws, 'force_close', {
+                                            reason: '교사에 의해 작성이 종료되었습니다',
+                                            assignmentId: killAssignment,
+                                        });
+                                        deliveredSubmissionIds.add(student.submissionId);
+                                    }
+                                }
+                            }
+                            // Give connected editors time to flush their last snapshot and use
+                            // the normal submit endpoint. Only submissions still IN_PROGRESS
+                            // are claimed by the server-side fallback.
+                            if (targets.length > 0)
+                                await delay(2500);
+                            const fallbackErrors = [];
+                            for (const target of targets) {
+                                try {
+                                    const result = await (0, submissionFinalizer_1.finalizeSubmission)({
+                                        submissionId: target.id,
+                                        status: 'FORCE_CLOSED',
+                                    });
+                                    if (result.outcome === 'finalized' && result.submission) {
+                                        notifySubmissionsUpdate(result.submission.assignment_id, result.submission.student_id);
+                                    }
+                                    if (result.analysisError) {
+                                        fallbackErrors.push({ submissionId: target.id, error: result.analysisError });
+                                    }
+                                }
+                                catch (error) {
+                                    fallbackErrors.push({
+                                        submissionId: target.id,
+                                        error: error instanceof Error ? error.message : '강제 종료 처리 오류',
+                                    });
+                                }
+                            }
+                            // Let a connected student's analysis update land before producing
+                            // the aggregate result.
+                            if (deliveredSubmissionIds.size > 0)
+                                await delay(250);
+                            let finalRows = [];
+                            if (targets.length > 0) {
+                                const [rows] = await database_1.default.query('SELECT id, status, analysis_json FROM submissions WHERE id IN (?)', [targets.map(target => target.id)]);
+                                finalRows = rows;
+                            }
+                            const forceClosedCount = finalRows.filter(row => row.status === 'FORCE_CLOSED').length;
+                            const submittedDuringGrace = finalRows.filter(row => row.status === 'SUBMITTED').length;
+                            const stateFailedCount = targets.length - forceClosedCount - submittedDuringGrace;
+                            const analysisFailedCount = finalRows.filter(row => row.status === 'FORCE_CLOSED' && !row.analysis_json).length;
+                            const errorMessages = [
+                                ...fallbackErrors.map(item => `${item.submissionId}: ${item.error}`),
+                                ...(stateFailedCount > 0 ? [`${stateFailedCount}건의 상태 전환이 완료되지 않았습니다`] : []),
+                                ...(analysisFailedCount > fallbackErrors.length
+                                    ? [`${analysisFailedCount - fallbackErrors.length}건의 분석 결과가 저장되지 않았습니다`]
+                                    : []),
+                            ];
+                            send(ws, 'force_submit_ack', {
+                                requestId,
+                                assignmentId: killAssignment,
+                                targetCount: targets.length,
+                                deliveredCount: deliveredSubmissionIds.size,
+                                alreadySubmittedCount: initiallySubmitted + submittedDuringGrace,
+                                forceClosedCount,
+                                successCount: Math.max(0, forceClosedCount - analysisFailedCount),
+                                failedCount: stateFailedCount + analysisFailedCount,
+                                analysisFailedCount,
+                                errors: errorMessages,
+                            });
+                        }
+                        catch (error) {
+                            console.error('Force submit error:', error);
+                            send(ws, 'force_submit_error', {
+                                requestId,
+                                code: 'PROCESSING_ERROR',
+                                error: error instanceof Error
+                                    ? `작성 세션 종료 처리 중 오류가 발생했습니다: ${error.message}`
+                                    : '작성 세션 종료 처리 중 오류가 발생했습니다',
+                            });
+                        }
+                        finally {
+                            forceSubmitInProgress.delete(killAssignment);
+                        }
                         break;
                     }
                     // ── Teacher: join room to receive status updates ──
                     case 'teacher_join': {
-                        if (!clientState || clientState.user.role !== 'TEACHER')
+                        if (!clientState || (clientState.user.role !== 'TEACHER' && clientState.user.role !== 'ADMIN'))
                             break;
-                        clientState.assignmentId = payload.assignmentId;
+                        const [rows] = await database_1.default.query('SELECT teacher_id FROM assignments WHERE id = ?', [payload.assignmentId]);
+                        const assignment = rows[0];
+                        if (assignment &&
+                            (clientState.user.role === 'ADMIN' || assignment.teacher_id === clientState.user.userId)) {
+                            clientState.assignmentId = payload.assignmentId;
+                        }
+                        else {
+                            send(ws, 'error', { error: '해당 과제의 실시간 현황을 볼 권한이 없습니다' });
+                        }
                         break;
                     }
                     // ── Join classroom room for student list live refresh ──

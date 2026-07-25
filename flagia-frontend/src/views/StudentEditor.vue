@@ -23,6 +23,8 @@ const submitted = ref(false)
 const loading = ref(true)
 const wsConnected = ref(false)
 const submitting = ref(false)
+const submitOutcome = ref<'normal' | 'teacher' | 'timer' | 'forced-unknown'>('normal')
+const submitError = ref('')
 
 const showSubmitModal = ref(false)
 const bypassLeaveGuard = ref(false)
@@ -69,6 +71,9 @@ let flushInterval: any = null
 let autoSaveInterval: any = null
 let snapshotInterval: any = null
 let lastSnapshotText = ''
+let batchCounter = 0
+const pendingBatchAcks = new Map<string, (saved: boolean) => void>()
+const pendingFlushes = new Set<Promise<boolean>>()
 
 // Active-writing-time tracking. The countdown is a budget of *active* seconds
 // (assignment.time_limit minutes) that persists across sessions: leaving the
@@ -144,8 +149,8 @@ function stripHtml(html: string): string {
     .replace(/&gt;/g, '>')
 }
 
-function captureSnapshot() {
-  if (isLocked.value || submitted.value) return
+function captureSnapshot(force = false) {
+  if ((!force && isLocked.value) || submitted.value) return
   const text = stripHtml(content.value)
   if (text === lastSnapshotText) return // only on change
   lastSnapshotText = text
@@ -160,16 +165,35 @@ function captureSnapshot() {
   })
 }
 
-function flushEvents() {
-  if (eventBuffer.length === 0 || !ws || ws.readyState !== WebSocket.OPEN || !sessionId.value) return
+function flushEvents(): Promise<boolean> {
+  if (eventBuffer.length === 0) {
+    if (pendingFlushes.size === 0) return Promise.resolve(true)
+    return Promise.all([...pendingFlushes]).then(results => results.every(Boolean))
+  }
+  if (!ws || ws.readyState !== WebSocket.OPEN || !sessionId.value) return Promise.resolve(false)
   const batch = [...eventBuffer]
   eventBuffer = []
+  const batchId = `${sessionId.value}-${++batchCounter}`
   ws.send(JSON.stringify({
     type: 'event_batch',
     payload: {
-      events: batch
+      events: batch,
+      batchId,
     }
   }))
+  const pending = new Promise<boolean>(resolve => {
+    const timeout = setTimeout(() => {
+      pendingBatchAcks.delete(batchId)
+      resolve(false)
+    }, 1200)
+    pendingBatchAcks.set(batchId, saved => {
+      clearTimeout(timeout)
+      resolve(saved)
+    })
+  })
+  pendingFlushes.add(pending)
+  void pending.finally(() => pendingFlushes.delete(pending))
+  return pending
 }
 
 // ── WebSocket ──
@@ -204,8 +228,14 @@ function connectWS() {
         // Drain anything that buffered while (re)connecting so a brief WS drop
         // (deploy/network) doesn't strand keystrokes.
         flushEvents()
+      } else if (msg.type === 'batch_ack' && msg.payload?.batchId) {
+        const resolve = pendingBatchAcks.get(msg.payload.batchId)
+        if (resolve) {
+          pendingBatchAcks.delete(msg.payload.batchId)
+          resolve(true)
+        }
       } else if (msg.type === 'force_close' || msg.type === 'submit_required') {
-        handleTimeExpired()
+        handleSessionEnd(msg.type === 'force_close' ? 'teacher' : 'timer')
       }
     } catch { /* noop */ }
   }
@@ -346,23 +376,37 @@ function tickTimer() {
   timerSeconds.value = Math.ceil(remaining)
   if (remaining <= 0) {
     clearInterval(timerInterval)
-    handleTimeExpired()
+    handleSessionEnd('timer')
   }
 }
 
-function handleTimeExpired() {
-  if (isLocked.value) return
+async function handleSessionEnd(reason: 'teacher' | 'timer') {
+  if (isLocked.value || submitted.value || submitting.value) return
+  submitOutcome.value = reason
   isLocked.value = true
-  flushEvents()
-  submitEssay(true)
+  showSubmitModal.value = false
+  clearInterval(timerInterval)
+  clearInterval(autoSaveInterval)
+  clearInterval(snapshotInterval)
+  // captureSnapshot normally skips a locked editor. Force mode records the
+  // exact document the student saw at the moment the session was ended.
+  captureSnapshot(true)
+  await flushEvents()
+  // Persist the same latest document as a draft before finalization. If the
+  // final request is interrupted, the server-side fallback can still submit it.
+  await saveDraft()
+  await submitEssay(true, reason)
 }
 
 // ── Submit ──
-async function submitEssay(forceClose = false) {
+async function submitEssay(forceClose = false, reason: 'teacher' | 'timer' | 'normal' = 'normal') {
   if (submitting.value) return
   submitting.value = true
-  captureSnapshot()
-  flushEvents()
+  submitError.value = ''
+  const wasLocked = isLocked.value
+  isLocked.value = true
+  captureSnapshot(true)
+  await flushEvents()
   
   try {
     const res = await fetch(`${API}/api/submissions/${submission.value.id}/submit`, {
@@ -371,16 +415,61 @@ async function submitEssay(forceClose = false) {
       body: JSON.stringify({ finalMarkdown: content.value, forceClose }),
     })
     if (res.ok) {
+      const result = await res.json().catch(() => ({}))
       submitted.value = true
       isLocked.value = true
+      submission.value.status = result.status || (forceClose ? 'FORCE_CLOSED' : 'SUBMITTED')
+      submitOutcome.value = submission.value.status === 'FORCE_CLOSED'
+        ? (reason === 'normal' ? 'forced-unknown' : reason)
+        : 'normal'
       clearInterval(timerInterval)
       clearInterval(flushInterval)
+      clearInterval(autoSaveInterval)
+      clearInterval(snapshotInterval)
       ws?.close()
+    } else {
+      const error = await res.json().catch(() => ({}))
+      throw new Error(error.error || '제출에 실패했습니다')
     }
   } catch (err) {
     console.error('Submit error:', err)
+    submitError.value = err instanceof Error ? err.message : '제출 처리 중 오류가 발생했습니다'
+    // A teacher/timer-closed editor must remain locked while the server fallback
+    // runs. Re-read the existing submission shortly afterwards so a transient
+    // HTTP disconnect still reaches the correct completion screen.
+    if (forceClose) {
+      setTimeout(refreshFinalState, 3200)
+    } else {
+      isLocked.value = wasLocked
+    }
   } finally {
     submitting.value = false
+  }
+}
+
+async function refreshFinalState() {
+  if (!submission.value || submitted.value) return
+  try {
+    const res = await fetch(`${API}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
+      body: JSON.stringify({ assignmentId: route.params.assignmentId }),
+    })
+    if (!res.ok) return
+    const latest = await res.json()
+    if (latest.status === 'FORCE_CLOSED' || latest.status === 'SUBMITTED') {
+      submission.value = latest
+      content.value = latest.final_markdown || content.value
+      submitted.value = true
+      isLocked.value = true
+      submitOutcome.value = latest.status === 'FORCE_CLOSED'
+        ? (submitOutcome.value === 'normal' ? 'forced-unknown' : submitOutcome.value)
+        : 'normal'
+      submitError.value = ''
+      ws?.close()
+    }
+  } catch {
+    // Keep the editor locked; reloading the page will read the final server state.
   }
 }
 
@@ -443,6 +532,7 @@ onMounted(async () => {
     if (submission.value.status !== 'IN_PROGRESS') {
       isLocked.value = true
       submitted.value = true
+      submitOutcome.value = submission.value.status === 'FORCE_CLOSED' ? 'forced-unknown' : 'normal'
       content.value = submission.value.final_markdown || ''
       loading.value = false
       return
@@ -505,7 +595,7 @@ onBeforeRouteLeave(() => {
 })
 
 async function confirmSubmit() {
-  await submitEssay(false)
+  await submitEssay(false, 'normal')
   showSubmitModal.value = false
 }
 </script>
@@ -522,10 +612,23 @@ async function confirmSubmit() {
   <!-- Submitted overlay -->
   <div v-else-if="submitted" class="min-h-screen bg-background flex items-center justify-center p-6">
     <div class="card p-10 max-w-md text-center">
-      <div class="text-5xl mb-4">✅</div>
-      <h2 class="text-xl font-bold text-text-primary mb-2">제출 완료</h2>
+      <div class="text-5xl mb-4">{{ submitOutcome === 'teacher' ? '🔒' : '✅' }}</div>
+      <h2 class="text-xl font-bold text-text-primary mb-2">
+        {{ submitOutcome === 'teacher'
+          ? '강제 종료되어 자동 제출되었습니다'
+          : submitOutcome === 'timer'
+            ? '시간이 만료되어 자동 제출되었습니다'
+            : submitOutcome === 'forced-unknown'
+              ? '자동 제출되었습니다'
+              : '제출 완료' }}
+      </h2>
       <p class="text-sm text-text-secondary mb-2">
-        <strong>{{ assignment?.title }}</strong>에 대한 글이 성공적으로 제출되었습니다.
+        <template v-if="submitOutcome === 'teacher'">
+          교사에 의해 작성이 종료되었습니다. <strong>{{ assignment?.title }}</strong>의 최신 내용이 안전하게 제출되었습니다.
+        </template>
+        <template v-else>
+          <strong>{{ assignment?.title }}</strong>에 대한 글이 성공적으로 제출되었습니다.
+        </template>
       </p>
       <p class="text-xs text-text-muted mb-6">
         Flagia 분석 엔진이 작성 과정을 분석하고 있습니다.
@@ -569,11 +672,15 @@ async function confirmSubmit() {
         </div>
 
         <!-- Submit -->
-        <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="submitting || wordCount === 0">
+        <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="isLocked || submitting || wordCount === 0">
           <svg v-if="submitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          {{ submitting ? '제출 중...' : '제출하기' }}
+          {{ submitting ? '제출 중...' : isLocked ? '작성 종료됨' : '제출하기' }}
         </button>
       </div>
+    </div>
+
+    <div v-if="submitError" class="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ submitError }}
     </div>
 
     <!-- Editor area: read-only template pane (left, only when a template exists) + editor (right) -->

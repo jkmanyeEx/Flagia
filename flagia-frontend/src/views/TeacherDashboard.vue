@@ -37,6 +37,13 @@ const isLiveWatching = ref(false)
 const showDeleteSubModal = ref(false)
 const subToDelete = ref<any>(null)
 const deletingSub = ref(false)
+const showForceSubmitModal = ref(false)
+const forceSubmitting = ref(false)
+const forceSubmitRequestId = ref<string | null>(null)
+const forceSubmitResult = ref<any>(null)
+const forceSubmitMessage = ref('')
+const forceSubmitIsError = ref(false)
+let forceSubmitTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Create form
 const form = ref({
@@ -105,6 +112,12 @@ const avgScore = computed(() => {
 const flaggedCount = computed(() =>
   submissions.value.filter(s => s.flag_status === 'AMBER' || s.flag_status === 'RED').length
 )
+const inProgressCount = computed(() =>
+  submissions.value.filter(s => s.status === 'IN_PROGRESS').length
+)
+const canForceSubmitSelected = computed(() =>
+  !!selectedAssignment.value && (owns(selectedAssignment.value) || isAdmin.value)
+)
 
 // Socket
 let socket: WebSocket | null = null
@@ -147,6 +160,26 @@ function connectWS() {
         if (detailSubmission.value && payload.submissionId === detailSubmission.value.id) {
           liveContent.value = payload.content
         }
+      } else if (type === 'force_submit_ack') {
+        if (payload.requestId !== forceSubmitRequestId.value) return
+        finishForceSubmitRequest()
+        showForceSubmitModal.value = false
+        forceSubmitResult.value = payload
+        forceSubmitIsError.value = payload.failedCount > 0
+        if (payload.targetCount === 0) {
+          forceSubmitMessage.value = '현재 작성 중인 학생이 없습니다.'
+        } else if (payload.failedCount > 0) {
+          forceSubmitMessage.value =
+            `세션 종료 ${payload.forceClosedCount}명, 실패 ${payload.failedCount}명입니다.`
+        } else {
+          forceSubmitMessage.value = `작성 중이던 ${payload.forceClosedCount}명의 세션을 종료했습니다.`
+        }
+        fetchSubmissionsSilently()
+      } else if (type === 'force_submit_error') {
+        if (payload.requestId !== forceSubmitRequestId.value) return
+        finishForceSubmitRequest()
+        forceSubmitIsError.value = true
+        forceSubmitMessage.value = payload.error || '작성 세션 종료 요청에 실패했습니다.'
       }
     } catch (err) {
       console.error('WS message error:', err)
@@ -232,12 +265,15 @@ onUnmounted(() => {
     socket = null
     s.close()
   }
+  if (forceSubmitTimeout) clearTimeout(forceSubmitTimeout)
 })
 
 async function selectAssignment(a: any) {
   // Teachers only ever see their own; admins may open any assignment.
   if (!owns(a) && !isAdmin.value) return
   selectedAssignment.value = a
+  forceSubmitResult.value = null
+  forceSubmitMessage.value = ''
   loadingSubs.value = true
   try {
     const res = await fetch(`${API}/api/assignments/${a.id}/submissions`, {
@@ -256,6 +292,55 @@ async function selectAssignment(a: any) {
 function backToList() {
   selectedAssignment.value = null
   submissions.value = []
+  forceSubmitResult.value = null
+  forceSubmitMessage.value = ''
+}
+
+function finishForceSubmitRequest() {
+  forceSubmitting.value = false
+  forceSubmitRequestId.value = null
+  if (forceSubmitTimeout) {
+    clearTimeout(forceSubmitTimeout)
+    forceSubmitTimeout = null
+  }
+}
+
+function openForceSubmitModal() {
+  if (!canForceSubmitSelected.value || inProgressCount.value === 0 || forceSubmitting.value) return
+  showForceSubmitModal.value = true
+}
+
+function executeForceSubmit() {
+  if (
+    !selectedAssignment.value ||
+    !canForceSubmitSelected.value ||
+    inProgressCount.value === 0 ||
+    forceSubmitting.value
+  ) return
+
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    forceSubmitIsError.value = true
+    forceSubmitMessage.value = '실시간 서버 연결이 끊겨 요청을 보낼 수 없습니다. 잠시 후 다시 시도해 주세요.'
+    return
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  forceSubmitting.value = true
+  forceSubmitRequestId.value = requestId
+  forceSubmitMessage.value = ''
+  forceSubmitResult.value = null
+  socket.send(JSON.stringify({
+    type: 'force_submit',
+    payload: { assignmentId: selectedAssignment.value.id, requestId },
+  }))
+
+  forceSubmitTimeout = setTimeout(() => {
+    if (forceSubmitRequestId.value !== requestId) return
+    finishForceSubmitRequest()
+    forceSubmitIsError.value = true
+    forceSubmitMessage.value = '서버 응답이 지연되고 있습니다. 제출 현황을 확인한 뒤 다시 시도해 주세요.'
+    fetchSubmissionsSilently()
+  }, 120000)
 }
 
 async function createAssignment() {
@@ -537,8 +622,42 @@ function getGaugeOffset(score: number) {
 
       <!-- Submissions Table -->
       <div class="card overflow-hidden">
-        <div class="p-4 border-b border-border bg-background/50">
-          <h3 class="font-semibold text-text-primary">학생 제출 현황</h3>
+        <div class="p-4 border-b border-border bg-background/50 flex items-center justify-between gap-4">
+          <div>
+            <h3 class="font-semibold text-text-primary">학생 제출 현황</h3>
+            <p v-if="canForceSubmitSelected" class="text-xs text-text-muted mt-1">
+              현재 작성 중 <strong class="text-text-primary">{{ inProgressCount }}명</strong>
+            </p>
+          </div>
+          <button
+            v-if="canForceSubmitSelected"
+            @click="openForceSubmitModal"
+            class="btn btn-danger btn-sm flex-shrink-0"
+            :disabled="inProgressCount === 0 || forceSubmitting"
+          >
+            <svg v-if="forceSubmitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            {{ forceSubmitting ? '종료 처리 중...' : '작성 일괄 종료' }}
+          </button>
+        </div>
+
+        <div
+          v-if="forceSubmitMessage"
+          class="px-4 py-3 border-b text-sm"
+          :class="forceSubmitIsError
+            ? 'bg-red-50 border-red-200 text-red-700'
+            : 'bg-green-50 border-green-200 text-green-700'"
+        >
+          <div class="font-medium">{{ forceSubmitMessage }}</div>
+          <div v-if="forceSubmitResult" class="text-xs mt-1 opacity-80">
+            요청 대상 {{ forceSubmitResult.targetCount }}명 · 접속 중 전달 {{ forceSubmitResult.deliveredCount }}명 ·
+            이미 제출되어 제외 {{ forceSubmitResult.alreadySubmittedCount }}명 · 최종 강제 종료 {{ forceSubmitResult.forceClosedCount }}명
+            <span v-if="forceSubmitResult.analysisFailedCount">
+              · 분석 실패 {{ forceSubmitResult.analysisFailedCount }}명
+            </span>
+          </div>
+          <div v-if="forceSubmitResult?.errors?.length" class="text-xs mt-1">
+            {{ forceSubmitResult.errors.join(' · ') }}
+          </div>
         </div>
         
         <table class="data-table">
@@ -775,6 +894,46 @@ function getGaugeOffset(score: number) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div
+      v-if="showForceSubmitModal && selectedAssignment"
+      class="modal-overlay"
+      @click.self="!forceSubmitting && (showForceSubmitModal = false)"
+    >
+      <div class="modal-content max-w-md mx-4 p-6">
+        <div class="text-center">
+          <div class="text-4xl mb-4">⚠️</div>
+          <h3 class="text-lg font-bold mb-2">작성 세션 일괄 종료</h3>
+          <p class="text-sm text-text-secondary leading-relaxed">
+            현재 작성 중인 학생 {{ inProgressCount }}명의 글쓰기를 종료하고, 마지막으로 저장된 내용을 자동 제출합니다.
+            이미 제출한 학생에게는 영향을 주지 않습니다.
+          </p>
+        </div>
+        <div class="rounded-lg border border-red-200 bg-red-50 p-4 my-5">
+          <div class="text-xs text-red-600 font-medium mb-1">실행할 과제</div>
+          <div class="font-semibold text-text-primary">{{ selectedAssignment.title }}</div>
+          <div class="text-sm text-red-700 mt-1">작성 중 {{ inProgressCount }}명</div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            @click="showForceSubmitModal = false"
+            class="btn btn-outline flex-1"
+            :disabled="forceSubmitting"
+          >
+            취소
+          </button>
+          <button
+            @click="executeForceSubmit"
+            class="btn btn-danger flex-1"
+            :disabled="forceSubmitting || inProgressCount === 0"
+          >
+            <svg v-if="forceSubmitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            {{ forceSubmitting ? '종료 처리 중...' : '종료 및 제출' }}
+          </button>
+        </div>
       </div>
     </div>
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "test:force-submit": "tsx src/force_submit_test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

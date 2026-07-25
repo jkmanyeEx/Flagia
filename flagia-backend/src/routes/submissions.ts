@@ -4,6 +4,7 @@ import pool from '../database';
 import { authMiddleware, teacherOnly } from '../middleware/auth';
 import { runFlagiaAnalysis } from '../engine/flagiaEngine';
 import { notifySubmissionsUpdate } from '../websocket';
+import { finalizeSubmission } from '../services/submissionFinalizer';
 
 const router = Router();
 
@@ -82,83 +83,43 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 // PUT /api/submissions/:id/submit — finalize submission and trigger analysis
 router.put('/:id/submit', authMiddleware, async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
     const { finalMarkdown, forceClose } = req.body;
     const status = forceClose ? 'FORCE_CLOSED' : 'SUBMITTED';
 
-    // Update the submission text and status
-    await pool.query(
-      `UPDATE submissions SET final_markdown = ?, status = ?, submitted_at = NOW()
-       WHERE id = ? AND status = 'IN_PROGRESS'`,
-      [finalMarkdown || '', status, req.params.id]
-    );
-
-    // Get submission with assignment info for analysis
-    const [rows] = await pool.query(
-      `SELECT s.*, a.template_text, a.mode, a.text_limit
-       FROM submissions s
-       JOIN assignments a ON s.assignment_id = a.id
-       WHERE s.id = ?`,
+    const [ownerRows] = await pool.query(
+      'SELECT student_id FROM submissions WHERE id = ?',
       [req.params.id]
     );
-    const submission = (rows as any[])[0];
+    const submission = (ownerRows as any[])[0];
     if (!submission) {
       res.status(404).json({ error: '제출물을 찾을 수 없습니다' });
       return;
     }
-
-    // Gather all session events for analysis
-    const [sessionRows] = await pool.query(
-      'SELECT events_blob FROM sessions WHERE submission_id = ? ORDER BY start_time ASC',
-      [req.params.id]
-    );
-    const allEvents: any[] = [];
-    for (const session of sessionRows as any[]) {
-      if (session.events_blob) {
-        try {
-          const parsed = JSON.parse(session.events_blob);
-          if (Array.isArray(parsed)) allEvents.push(...parsed);
-        } catch { /* skip malformed blob */ }
-      }
+    if (submission.student_id !== user.userId) {
+      res.status(403).json({ error: '본인의 제출물만 제출할 수 있습니다' });
+      return;
     }
 
-    // Run Flagia analysis engine safely
-    let analysis;
-    try {
-      analysis = runFlagiaAnalysis(
-        allEvents,
-        submission.final_markdown || '',
-        submission.template_text || '',
-        submission.mode,
-        submission.submitted_at
-      );
-
-      // Update submission with analysis results + cache full analysis JSON
-      await pool.query(
-        `UPDATE submissions SET
-          flagia_score = ?, flag_status = ?,
-          coefficient_of_variation = ?, revision_ratio = ?,
-          total_paste_count = ?, total_blur_duration = ?,
-          analysis_json = ?
-         WHERE id = ?`,
-        [
-          analysis.flagiaScore,
-          analysis.flagStatus,
-          analysis.coefficientOfVariation,
-          analysis.revisionRatio,
-          analysis.totalPasteCount,
-          analysis.totalBlurDuration,
-          JSON.stringify(analysis),
-          req.params.id,
-        ]
-      );
-    } catch (engineErr) {
-      console.error('Flagia Analysis Engine Error:', engineErr);
-      // Even if analysis fails, we don't revert the submission status.
-      // The student has successfully submitted.
+    const result = await finalizeSubmission({
+      submissionId: req.params.id,
+      status,
+      finalMarkdown: typeof finalMarkdown === 'string' ? finalMarkdown : '',
+    });
+    if (result.outcome === 'not_found') {
+      res.status(404).json({ error: '제출물을 찾을 수 없습니다' });
+      return;
     }
 
-    notifySubmissionsUpdate(submission.assignment_id, submission.student_id);
-    res.json({ message: '제출 완료', analysis: analysis || null });
+    const finalizedSubmission = result.submission;
+    notifySubmissionsUpdate(finalizedSubmission.assignment_id, finalizedSubmission.student_id);
+    res.json({
+      message: result.outcome === 'already_finalized' ? '이미 제출 처리되었습니다' : '제출 완료',
+      status: finalizedSubmission.status,
+      alreadyFinalized: result.outcome === 'already_finalized',
+      analysis: result.analysis,
+      analysisError: result.analysisError,
+    });
   } catch (err) {
     console.error('Submit error:', err);
     res.status(500).json({ error: '제출 처리 중 오류가 발생했습니다' });
