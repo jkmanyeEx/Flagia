@@ -34,6 +34,17 @@ const detailSubmission = ref<any>(null)
 // watches an in-progress submission.
 const liveContent = ref<string | null>(null)
 const isLiveWatching = ref(false)
+const liveSocketAuthenticated = ref(false)
+const liveStatusText = computed(() => {
+  if (!isLiveWatching.value) return ''
+  if (!liveSocketAuthenticated.value) return '연결 복구 중'
+  if (liveContent.value === null || liveContent.value.length === 0) return '학생의 입력을 기다리는 중'
+  return '실시간 연결됨'
+})
+let latestLiveSentAt = 0
+let latestLiveRevision = 0
+let latestSnapshotSentAt = 0
+let hasReceivedLiveUpdate = false
 const showDeleteSubModal = ref(false)
 const subToDelete = ref<any>(null)
 const deletingSub = ref(false)
@@ -121,30 +132,47 @@ const canForceSubmitSelected = computed(() =>
 
 // Socket
 let socket: WebSocket | null = null
+let socketReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let socketUnmounted = false
+
+function resetLiveOrdering(clearContent = false) {
+  latestLiveSentAt = 0
+  latestLiveRevision = 0
+  latestSnapshotSentAt = 0
+  hasReceivedLiveUpdate = false
+  if (clearContent) liveContent.value = null
+}
 
 function connectWS() {
   if (!token.value) return
-  socket = new WebSocket(WS_URL)
-  socket.onopen = () => {
-    socket?.send(JSON.stringify({
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return
+  const currentSocket = new WebSocket(WS_URL)
+  socket = currentSocket
+  currentSocket.onopen = () => {
+    currentSocket.send(JSON.stringify({
       type: 'auth',
       payload: { token: token.value }
     }))
   }
-  socket.onmessage = (event) => {
+  currentSocket.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data)
       const { type, payload } = msg
       if (type === 'auth_ok') {
+        liveSocketAuthenticated.value = true
         if (selectedAssignment.value) {
-          socket?.send(JSON.stringify({
+          currentSocket.send(JSON.stringify({
             type: 'teacher_join',
             payload: { assignmentId: selectedAssignment.value.id }
           }))
         }
         // Resume live-watch after a reconnect if the detail modal is still open.
         if (isLiveWatching.value && detailSubmission.value) {
-          socket?.send(JSON.stringify({
+          // The server immediately follows this with the latest DB snapshot.
+          // Reset source priority so changes made while this socket was offline
+          // can seed the view before new live updates resume.
+          resetLiveOrdering()
+          currentSocket.send(JSON.stringify({
             type: 'watch_submission',
             payload: { submissionId: detailSubmission.value.id }
           }))
@@ -156,8 +184,29 @@ function connectWS() {
       } else if (type === 'assignments_update') {
         fetchAssignmentsSilently()
       } else if (type === 'submission_content_update') {
-        // Live writing sync for the open detail modal.
-        if (detailSubmission.value && payload.submissionId === detailSubmission.value.id) {
+        if (
+          !isLiveWatching.value ||
+          !detailSubmission.value ||
+          payload?.submissionId !== detailSubmission.value.id ||
+          typeof payload.content !== 'string' ||
+          !Number.isFinite(payload.sentAt)
+        ) return
+
+        if (payload.source === 'live') {
+          if (!Number.isSafeInteger(payload.revision) || payload.revision <= 0) return
+          if (
+            payload.sentAt < latestLiveSentAt ||
+            (payload.sentAt === latestLiveSentAt && payload.revision <= latestLiveRevision)
+          ) return
+          latestLiveSentAt = payload.sentAt
+          latestLiveRevision = payload.revision
+          hasReceivedLiveUpdate = true
+          liveContent.value = payload.content
+        } else if (payload.source === 'snapshot') {
+          // Once live data has arrived, delayed 2s snapshots are fallback-only
+          // and must never roll the teacher's view back.
+          if (hasReceivedLiveUpdate || payload.sentAt < latestSnapshotSentAt) return
+          latestSnapshotSentAt = payload.sentAt
           liveContent.value = payload.content
         }
       } else if (type === 'force_submit_ack') {
@@ -185,10 +234,15 @@ function connectWS() {
       console.error('WS message error:', err)
     }
   }
-  socket.onclose = () => {
-    setTimeout(() => {
-      if (socket) connectWS()
-    }, 3000)
+  currentSocket.onclose = () => {
+    if (socket === currentSocket) socket = null
+    liveSocketAuthenticated.value = false
+    if (socketUnmounted) return
+    if (socketReconnectTimer) clearTimeout(socketReconnectTimer)
+    socketReconnectTimer = setTimeout(connectWS, 3000)
+  }
+  currentSocket.onerror = () => {
+    liveSocketAuthenticated.value = false
   }
 }
 
@@ -200,7 +254,18 @@ async function fetchSubmissionsSilently() {
       headers: { Authorization: `Bearer ${token.value}` },
     })
     if (res.ok) {
-      submissions.value = await res.json()
+      const nextSubmissions = await res.json()
+      submissions.value = nextSubmissions
+      if (detailSubmission.value) {
+        const updated = nextSubmissions.find((sub: any) => sub.id === detailSubmission.value.id)
+        if (updated) {
+          if (detailSubmission.value.status === 'IN_PROGRESS' && updated.status !== 'IN_PROGRESS') {
+            stopWatching()
+            resetLiveOrdering(true)
+          }
+          detailSubmission.value = updated
+        }
+      }
     }
   } catch { /* noop */ }
 }
@@ -257,6 +322,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  socketUnmounted = true
   if (refreshInterval) {
     clearInterval(refreshInterval)
   }
@@ -265,6 +331,7 @@ onUnmounted(() => {
     socket = null
     s.close()
   }
+  if (socketReconnectTimer) clearTimeout(socketReconnectTimer)
   if (forceSubmitTimeout) clearTimeout(forceSubmitTimeout)
 })
 
@@ -408,6 +475,8 @@ async function executeDeleteSub() {
       headers: { Authorization: `Bearer ${token.value}` },
     })
     if (res.ok) {
+      stopWatching()
+      resetLiveOrdering(true)
       showDetailModal.value = false
       showDeleteSubModal.value = false
       subToDelete.value = null
@@ -426,12 +495,14 @@ async function executeDeleteSub() {
 function openDetail(sub: any) {
   stopWatching()
   detailSubmission.value = sub
-  liveContent.value = null
+  resetLiveOrdering(true)
   showDetailModal.value = true
   // Live-watch in-progress writing in real time.
-  if (sub.status === 'IN_PROGRESS' && socket && socket.readyState === WebSocket.OPEN) {
+  if (sub.status === 'IN_PROGRESS') {
     isLiveWatching.value = true
-    socket.send(JSON.stringify({ type: 'watch_submission', payload: { submissionId: sub.id } }))
+    if (socket && socket.readyState === WebSocket.OPEN && liveSocketAuthenticated.value) {
+      socket.send(JSON.stringify({ type: 'watch_submission', payload: { submissionId: sub.id } }))
+    }
   }
 }
 
@@ -440,12 +511,13 @@ function stopWatching() {
     socket.send(JSON.stringify({ type: 'unwatch_submission', payload: { submissionId: detailSubmission.value.id } }))
   }
   isLiveWatching.value = false
+  resetLiveOrdering()
 }
 
 function closeDetail() {
   stopWatching()
   showDetailModal.value = false
-  liveContent.value = null
+  resetLiveOrdering(true)
 }
 
 function goToAnalysis(submissionId: string) {
@@ -737,7 +809,7 @@ function getGaugeOffset(score: number) {
             <h3 class="text-xl font-bold flex items-center gap-2">
               {{ detailSubmission.student_name }}의 제출물
               <span v-if="isLiveWatching" class="inline-flex items-center gap-1 text-xs font-semibold text-flag-red">
-                <span class="live-dot"></span> 실시간
+                <span class="live-dot"></span> {{ liveStatusText }}
               </span>
             </h3>
             <p class="text-sm text-text-muted">{{ detailSubmission.student_email }}</p>

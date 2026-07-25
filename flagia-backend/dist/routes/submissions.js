@@ -88,6 +88,7 @@ router.put('/:id/submit', auth_1.authMiddleware, async (req, res) => {
             return;
         }
         const finalizedSubmission = result.submission;
+        (0, websocket_1.invalidateSubmissionLiveSession)(req.params.id);
         (0, websocket_1.notifySubmissionsUpdate)(finalizedSubmission.assignment_id, finalizedSubmission.student_id);
         res.json({
             message: result.outcome === 'already_finalized' ? '이미 제출 처리되었습니다' : '제출 완료',
@@ -419,6 +420,7 @@ router.delete('/:id', auth_1.authMiddleware, auth_1.teacherOnly, async (req, res
          total_blur_duration = 0,
          analysis_json = NULL
        WHERE id = ?`, [req.params.id]);
+        (0, websocket_1.invalidateSubmissionLiveSession)(req.params.id);
         // Notify student and teacher of updates
         (0, websocket_1.notifySubmissionsUpdate)(sub.assignment_id, sub.student_id);
         res.json({ message: '제출물이 초기화되었습니다' });

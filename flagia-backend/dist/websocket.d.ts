@@ -10,6 +10,7 @@
 import { Server as HttpServer } from 'http';
 export declare function notifySubmissionsUpdate(assignmentId: string, studentId?: string): void;
 export declare function notifyAssignmentsUpdate(): void;
+export declare function invalidateSubmissionLiveSession(submissionId: string): void;
 export declare function notifyClassroomMembersUpdate(classroomId: string): void;
 export declare function initWebSocket(server: HttpServer): void;
 //# sourceMappingURL=websocket.d.ts.map

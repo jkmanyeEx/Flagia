@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from '../database';
 import { authMiddleware, teacherOnly } from '../middleware/auth';
 import { runFlagiaAnalysis } from '../engine/flagiaEngine';
-import { notifySubmissionsUpdate } from '../websocket';
+import { invalidateSubmissionLiveSession, notifySubmissionsUpdate } from '../websocket';
 import { finalizeSubmission } from '../services/submissionFinalizer';
 
 const router = Router();
@@ -112,6 +112,7 @@ router.put('/:id/submit', authMiddleware, async (req: Request, res: Response) =>
     }
 
     const finalizedSubmission = result.submission;
+    invalidateSubmissionLiveSession(req.params.id);
     notifySubmissionsUpdate(finalizedSubmission.assignment_id, finalizedSubmission.student_id);
     res.json({
       message: result.outcome === 'already_finalized' ? '이미 제출 처리되었습니다' : '제출 완료',
@@ -507,6 +508,7 @@ router.delete('/:id', authMiddleware, teacherOnly, async (req: Request, res: Res
        WHERE id = ?`,
       [req.params.id]
     );
+    invalidateSubmissionLiveSession(req.params.id);
 
     // Notify student and teacher of updates
     notifySubmissionsUpdate(sub.assignment_id, sub.student_id);

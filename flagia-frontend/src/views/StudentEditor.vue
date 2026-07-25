@@ -74,6 +74,13 @@ let lastSnapshotText = ''
 let batchCounter = 0
 const pendingBatchAcks = new Map<string, (saved: boolean) => void>()
 const pendingFlushes = new Set<Promise<boolean>>()
+const LIVE_UPDATE_INTERVAL_MS = 200
+let liveUpdateTimer: ReturnType<typeof setTimeout> | null = null
+let liveSessionReady = false
+let liveRevision = 0
+let lastLiveContent: string | null = null
+let lastLiveSentAt = 0
+let componentUnmounted = false
 
 // Active-writing-time tracking. The countdown is a budget of *active* seconds
 // (assignment.time_limit minutes) that persists across sessions: leaving the
@@ -165,6 +172,78 @@ function captureSnapshot(force = false) {
   })
 }
 
+function clearLiveUpdateTimer() {
+  if (!liveUpdateTimer) return
+  clearTimeout(liveUpdateTimer)
+  liveUpdateTimer = null
+}
+
+function sendLiveContent(force = false) {
+  clearLiveUpdateTimer()
+  if (
+    !liveSessionReady ||
+    !ws ||
+    ws.readyState !== WebSocket.OPEN ||
+    !submission.value ||
+    submitted.value ||
+    isLocked.value
+  ) {
+    return false
+  }
+
+  const text = stripHtml(content.value)
+  if (!force && text === lastLiveContent) return false
+
+  const nextRevision = liveRevision + 1
+  const sentAt = Date.now()
+  try {
+    ws.send(JSON.stringify({
+      type: 'live_content_update',
+      payload: {
+        submissionId: submission.value.id,
+        assignmentId: String(route.params.assignmentId),
+        content: text,
+        revision: nextRevision,
+        sentAt,
+      },
+    }))
+    liveRevision = nextRevision
+    lastLiveContent = text
+    lastLiveSentAt = sentAt
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Leading/trailing throttle: the full current document is relayed at most once
+// per 200ms, and the final change in a burst is always scheduled.
+function scheduleLiveContentUpdate() {
+  if (
+    !liveSessionReady ||
+    submitted.value ||
+    isLocked.value ||
+    !ws ||
+    ws.readyState !== WebSocket.OPEN
+  ) {
+    return
+  }
+
+  const wait = Math.max(0, LIVE_UPDATE_INTERVAL_MS - (Date.now() - lastLiveSentAt))
+  if (wait === 0) {
+    sendLiveContent()
+    return
+  }
+  if (!liveUpdateTimer) {
+    liveUpdateTimer = setTimeout(() => {
+      liveUpdateTimer = null
+      sendLiveContent()
+    }, wait)
+  }
+}
+
+watch(content, scheduleLiveContentUpdate)
+
 function flushEvents(): Promise<boolean> {
   if (eventBuffer.length === 0) {
     if (pendingFlushes.size === 0) return Promise.resolve(true)
@@ -200,9 +279,14 @@ function flushEvents(): Promise<boolean> {
 let reconnectTimer: any = null
 
 function connectWS() {
-  if (!token.value) return
+  if (!token.value || componentUnmounted) return
   if (ws && ws.readyState === WebSocket.OPEN) return
 
+  liveSessionReady = false
+  liveRevision = 0
+  lastLiveContent = null
+  lastLiveSentAt = 0
+  clearLiveUpdateTimer()
   ws = new WebSocket(WS_URL)
   ws.onopen = () => {
     if (reconnectTimer) clearTimeout(reconnectTimer)
@@ -225,6 +309,10 @@ function connectWS() {
         }))
       } else if (msg.type === 'session_ready') {
         sessionId.value = msg.payload.sessionId
+        liveSessionReady = true
+        // A new connection has a new revision sequence. Send the complete
+        // current document once so teachers recover any changes made offline.
+        sendLiveContent(true)
         // Drain anything that buffered while (re)connecting so a brief WS drop
         // (deploy/network) doesn't strand keystrokes.
         flushEvents()
@@ -241,7 +329,10 @@ function connectWS() {
   }
   ws.onclose = () => {
     wsConnected.value = false
-    if (!submitted.value) {
+    liveSessionReady = false
+    sessionId.value = ''
+    clearLiveUpdateTimer()
+    if (!submitted.value && !componentUnmounted) {
       reconnectTimer = setTimeout(connectWS, 3000)
     }
   }
@@ -383,6 +474,7 @@ function tickTimer() {
 async function handleSessionEnd(reason: 'teacher' | 'timer') {
   if (isLocked.value || submitted.value || submitting.value) return
   submitOutcome.value = reason
+  sendLiveContent()
   isLocked.value = true
   showSubmitModal.value = false
   clearInterval(timerInterval)
@@ -404,6 +496,7 @@ async function submitEssay(forceClose = false, reason: 'teacher' | 'timer' | 'no
   submitting.value = true
   submitError.value = ''
   const wasLocked = isLocked.value
+  sendLiveContent()
   isLocked.value = true
   captureSnapshot(true)
   await flushEvents()
@@ -481,6 +574,7 @@ async function refreshFinalState() {
 // from writing-time analysis.
 function beaconSubmit() {
   if (submitted.value || !submission.value) return
+  sendLiveContent()
   // Include any keystroke events that haven't been flushed over the WS yet, so
   // closing the tab mid-write doesn't lose the tail of the writing process.
   captureSnapshot()
@@ -571,10 +665,14 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  componentUnmounted = true
+  if (reconnectTimer) clearTimeout(reconnectTimer)
   clearInterval(timerInterval)
   clearInterval(flushInterval)
   clearInterval(autoSaveInterval)
   clearInterval(snapshotInterval)
+  sendLiveContent()
+  clearLiveUpdateTimer()
   captureSnapshot()
   flushEvents()
   ws?.close()
