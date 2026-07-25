@@ -184,7 +184,7 @@ export function initWebSocket(server: HttpServer) {
               sub.status !== 'IN_PROGRESS' ||
               sub.assignment_id !== assignmentId ||
               sub.student_id !== clientState.user.userId ||
-              clientState.user.role !== 'STUDENT'
+              (clientState.user.role !== 'STUDENT' && clientState.user.role !== 'ADMIN')
             ) {
               ws.send(JSON.stringify({ 
                 type: 'error', 
@@ -259,7 +259,10 @@ export function initWebSocket(server: HttpServer) {
 
           // ── Ephemeral student content relay (never persisted) ──
           case 'live_content_update': {
-            if (!clientState || clientState.user.role !== 'STUDENT') break;
+            if (
+              !clientState ||
+              (clientState.user.role !== 'STUDENT' && clientState.user.role !== 'ADMIN')
+            ) break;
             if (!payload || typeof payload !== 'object') break;
 
             const joined = clientState.joinedSubmission;

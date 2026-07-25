@@ -22,12 +22,22 @@ const isLocked = ref(false)
 const submitted = ref(false)
 const loading = ref(true)
 const wsConnected = ref(false)
+const sessionError = ref('')
 const submitting = ref(false)
 const submitOutcome = ref<'normal' | 'teacher' | 'timer' | 'forced-unknown'>('normal')
 const submitError = ref('')
 
 const showSubmitModal = ref(false)
 const bypassLeaveGuard = ref(false)
+const sessionConnected = computed(() => wsConnected.value && !!sessionId.value)
+const connectionLocked = computed(() => !sessionConnected.value && !submitted.value)
+const writingLocked = computed(() => isLocked.value || connectionLocked.value)
+const connectionLabel = computed(() => {
+  if (sessionConnected.value) return '연결됨'
+  if (sessionError.value) return '세션 연결 실패'
+  if (wsConnected.value) return '세션 연결 중'
+  return '연결 중'
+})
 
 // Timer
 const timerSeconds = ref(0)
@@ -300,6 +310,7 @@ function connectWS() {
       const msg = JSON.parse(e.data)
       if (msg.type === 'auth_ok') {
         wsConnected.value = true
+        sessionError.value = ''
         ws?.send(JSON.stringify({
           type: 'join_session',
           payload: {
@@ -310,6 +321,9 @@ function connectWS() {
       } else if (msg.type === 'session_ready') {
         sessionId.value = msg.payload.sessionId
         liveSessionReady = true
+        sessionError.value = ''
+        resumeActiveTimer()
+        tickTimer()
         // A new connection has a new revision sequence. Send the complete
         // current document once so teachers recover any changes made offline.
         sendLiveContent(true)
@@ -322,28 +336,40 @@ function connectWS() {
           pendingBatchAcks.delete(msg.payload.batchId)
           resolve(true)
         }
+      } else if (msg.type === 'error' || msg.type === 'auth_error') {
+        pauseActiveTimer()
+        sessionId.value = ''
+        liveSessionReady = false
+        sessionError.value = msg.payload?.error || '작성 세션에 연결할 수 없습니다'
       } else if (msg.type === 'force_close' || msg.type === 'submit_required') {
         handleSessionEnd(msg.type === 'force_close' ? 'teacher' : 'timer')
       }
     } catch { /* noop */ }
   }
   ws.onclose = () => {
+    pauseActiveTimer()
+    tickTimer()
     wsConnected.value = false
     liveSessionReady = false
     sessionId.value = ''
+    sessionError.value = ''
     clearLiveUpdateTimer()
     if (!submitted.value && !componentUnmounted) {
       reconnectTimer = setTimeout(connectWS, 3000)
     }
   }
   ws.onerror = () => {
+    pauseActiveTimer()
+    tickTimer()
     wsConnected.value = false
+    liveSessionReady = false
+    sessionId.value = ''
   }
 }
 
 // ── Keyboard handlers ──
 function handleKeydown(e: KeyboardEvent, selection?: { cursor: number; selectionLength: number }) {
-  if (isLocked.value) return
+  if (writingLocked.value) return
   pushEvent('keydown', {
     key: e.key,
     cursorPosition: selection?.cursor ?? 0,
@@ -371,7 +397,7 @@ function handleCopyCut() {
 }
 
 function handlePaste(e: ClipboardEvent, selection?: { cursor: number; selectionLength: number }) {
-  if (isLocked.value) { e.preventDefault(); return }
+  if (writingLocked.value) { e.preventDefault(); return }
   const text = e.clipboardData?.getData('text') || ''
   // Legal if the pasted text was copied from somewhere on this page this session.
   const norm = normalizeClip(text)
@@ -404,12 +430,19 @@ function pauseActiveTimer() {
 }
 
 function resumeActiveTimer() {
-  if (sessionStartMs) return
+  if (
+    sessionStartMs ||
+    !sessionConnected.value ||
+    document.visibilityState === 'hidden' ||
+    isLocked.value ||
+    submitted.value ||
+    submitting.value
+  ) return
   sessionStartMs = Date.now()
 }
 
 function handleWindowBlur() {
-  if (isLocked.value || submitting.value) return
+  if (writingLocked.value || submitting.value) return
   if (tabLeft) return
   if (windowBlurred) return
   windowBlurred = true
@@ -422,7 +455,7 @@ function handleWindowFocus() {
   pushEvent('focus')
 }
 function handleVisibility() {
-  if (isLocked.value || submitting.value) return
+  if (writingLocked.value || submitting.value) return
   if (document.visibilityState === 'hidden') {
     if (!tabLeft) {
       if (windowBlurred) {
@@ -437,7 +470,6 @@ function handleVisibility() {
     if (tabLeft) {
       tabLeft = false
       pushEvent('reconnect')
-      resumeActiveTimer()
       if (document.hasFocus()) {
         windowBlurred = false
       } else {
@@ -445,6 +477,10 @@ function handleVisibility() {
         pushEvent('blur')
       }
     }
+    // A telemetry reconnect may complete while the tab is hidden. In that case
+    // there was no active timer to pause and `tabLeft` may still be false, so
+    // resume unconditionally here (the helper rechecks every safety gate).
+    resumeActiveTimer()
   }
 }
 
@@ -456,7 +492,7 @@ function startTimer() {
   if (!assignment.value) return
   // Resume from time already spent in earlier sessions instead of resetting.
   baseSpentSec = Math.max(0, Number(submission.value?.time_spent_sec) || 0)
-  sessionStartMs = Date.now()
+  sessionStartMs = 0
   tickTimer()
   timerInterval = setInterval(tickTimer, 1000)
 }
@@ -760,19 +796,27 @@ async function confirmSubmit() {
       <div class="flex items-center gap-4">
         <!-- Connection status -->
         <div class="flex items-center gap-1.5">
-          <span class="status-dot" :class="wsConnected ? 'connected' : 'disconnected'"></span>
-          <span class="text-xs text-text-muted">{{ wsConnected ? '연결됨' : '연결 끊김' }}</span>
+          <span class="status-dot" :class="sessionConnected ? 'connected' : 'disconnected'"></span>
+          <span class="text-xs text-text-muted">{{ connectionLabel }}</span>
         </div>
 
         <!-- Timer -->
-        <div class="timer" :class="{ 'timer-danger': timerDanger }">
+        <div
+          class="timer flex items-center gap-1.5 transition-opacity"
+          :class="{ 'timer-danger': timerDanger && sessionConnected, 'opacity-45': !sessionConnected }"
+          :title="sessionConnected ? '작성 시간이 진행 중입니다' : '세션 연결 후 타이머가 시작됩니다'"
+        >
+          <svg v-if="!sessionConnected" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+          </svg>
           {{ timerDisplay }}
         </div>
 
         <!-- Submit -->
-        <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="isLocked || submitting || wordCount === 0">
+        <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="writingLocked || submitting || wordCount === 0">
           <svg v-if="submitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          {{ submitting ? '제출 중...' : isLocked ? '작성 종료됨' : '제출하기' }}
+          {{ submitting ? '제출 중...' : isLocked ? '작성 종료됨' : connectionLocked ? '연결 대기 중' : '제출하기' }}
         </button>
       </div>
     </div>
@@ -783,42 +827,71 @@ async function confirmSubmit() {
 
     <!-- Editor area: read-only template pane (left, only when a template exists) + editor (right) -->
     <div class="flex-1 p-4 lg:px-8 pb-8 overflow-hidden bg-background">
-      <div class="max-w-6xl mx-auto h-full flex flex-col lg:flex-row gap-4">
-        <!-- Template pane (read-only reference) — gray to distinguish from the
-             white editor; no header so its top aligns with the editor's. -->
-        <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-1/2">
-          <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5"
-               style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); background: #f3f4f6;">
-            <div class="markdown-body ProseMirror" v-html="assignment?.template_text"></div>
+      <div class="relative max-w-6xl mx-auto h-full">
+        <div
+          class="h-full flex flex-col lg:flex-row gap-4 transition duration-200"
+          :class="{ 'pointer-events-none select-none opacity-35 blur-[1px]': connectionLocked }"
+          :aria-hidden="connectionLocked"
+        >
+          <!-- Template pane (read-only reference) — gray to distinguish from the
+               white editor; no header so its top aligns with the editor's. -->
+          <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-1/2">
+            <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5"
+                 style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); background: #f3f4f6;">
+              <div class="markdown-body ProseMirror" v-html="assignment?.template_text"></div>
+            </div>
+          </div>
+
+          <!-- Editor pane -->
+          <div class="flex-1 flex flex-col min-h-0">
+            <div class="flex-1 min-h-0" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 0.5rem; overflow: hidden;">
+              <RichTextEditor
+                v-model="content"
+                :disabled="writingLocked"
+                placeholder="여기에 글을 작성하세요..."
+                @keydown="(e, selection) => handleKeydown(e, selection)"
+                @paste="(e, selection) => handlePaste(e, selection)"
+              />
+            </div>
+
+            <!-- Text stats & limit warning -->
+            <div class="mt-3 flex items-center justify-between">
+              <div class="flex items-center gap-3 text-xs text-text-muted">
+                <span>{{ wordCount.toLocaleString() }}자</span>
+                <span v-if="assignment?.text_limit" :class="wordCount > assignment.text_limit ? 'text-danger font-semibold' : ''">
+                  / {{ assignment.text_limit.toLocaleString() }}
+                </span>
+                <span>·</span>
+                <span>{{ readingTime }}분 읽기</span>
+              </div>
+              <div v-if="assignment?.text_limit && wordCount > assignment.text_limit" class="text-xs text-danger font-medium flex items-center gap-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Editor pane -->
-        <div class="flex-1 flex flex-col min-h-0">
-          <div class="flex-1 min-h-0" style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); border-radius: 0.5rem; overflow: hidden;">
-            <RichTextEditor
-              v-model="content"
-              :disabled="isLocked"
-              placeholder="여기에 글을 작성하세요..."
-              @keydown="(e, selection) => handleKeydown(e, selection)"
-              @paste="(e, selection) => handlePaste(e, selection)"
-            />
-          </div>
-
-          <!-- Text stats & limit warning -->
-          <div class="mt-3 flex items-center justify-between">
-            <div class="flex items-center gap-3 text-xs text-text-muted">
-              <span>{{ wordCount.toLocaleString() }}자</span>
-              <span v-if="assignment?.text_limit" :class="wordCount > assignment.text_limit ? 'text-danger font-semibold' : ''">
-                / {{ assignment.text_limit.toLocaleString() }}
-              </span>
-              <span>·</span>
-              <span>{{ readingTime }}분 읽기</span>
+        <div
+          v-if="connectionLocked"
+          class="absolute inset-0 z-20 flex items-center justify-center rounded-xl bg-white/55 px-6 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="w-full max-w-md rounded-2xl border border-border bg-white px-6 py-5 text-center shadow-xl shadow-slate-900/10">
+            <div class="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-danger">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5" y="11" width="14" height="10" rx="2"/>
+                <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+              </svg>
             </div>
-            <div v-if="assignment?.text_limit && wordCount > assignment.text_limit" class="text-xs text-danger font-medium flex items-center gap-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
-            </div>
+            <h3 class="text-sm font-bold text-text-primary">
+              {{ sessionError ? '작성 세션에 연결할 수 없습니다' : '안전한 작성 세션에 연결 중입니다' }}
+            </h3>
+            <p class="mt-1.5 text-xs leading-relaxed text-text-secondary">
+              {{ sessionError || '연결이 확인되면 타이머와 작성 화면이 자동으로 활성화됩니다.' }}
+            </p>
+            <p class="mt-3 text-[11px] font-medium text-text-muted">연결되지 않은 시간은 작성 시간에 포함되지 않습니다.</p>
           </div>
         </div>
       </div>

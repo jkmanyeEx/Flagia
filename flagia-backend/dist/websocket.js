@@ -152,7 +152,7 @@ function initWebSocket(server) {
                             sub.status !== 'IN_PROGRESS' ||
                             sub.assignment_id !== assignmentId ||
                             sub.student_id !== clientState.user.userId ||
-                            clientState.user.role !== 'STUDENT') {
+                            (clientState.user.role !== 'STUDENT' && clientState.user.role !== 'ADMIN')) {
                             ws.send(JSON.stringify({
                                 type: 'error',
                                 payload: { error: '본인의 진행 중인 제출물만 세션에 참여할 수 있습니다' }
@@ -208,7 +208,8 @@ function initWebSocket(server) {
                     }
                     // ── Ephemeral student content relay (never persisted) ──
                     case 'live_content_update': {
-                        if (!clientState || clientState.user.role !== 'STUDENT')
+                        if (!clientState ||
+                            (clientState.user.role !== 'STUDENT' && clientState.user.role !== 'ADMIN'))
                             break;
                         if (!payload || typeof payload !== 'object')
                             break;
