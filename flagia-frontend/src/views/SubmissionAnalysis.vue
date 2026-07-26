@@ -6,6 +6,10 @@ import { marked } from 'marked'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 import { resolveWsUrl } from '../composables/apiHost'
+import {
+  htmlToPlainText,
+  replayDocumentFrames,
+} from '../utils/replayFrames'
 
 const route = useRoute()
 const router = useRouter()
@@ -351,22 +355,10 @@ function isJung(k: string) { return JUNG_LIST.includes(k) }
 // so keystrokes begin after it. Seed the replay with that plain text so the
 // reconstructed document isn't missing its opening section.
 const templatePlain = computed(() =>
-  (submission.value?.templateText || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<hr\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  htmlToPlainText(submission.value?.templateText || '')
 )
 const finalPlain = computed(() =>
-  (submission.value?.finalMarkdown || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<hr\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  htmlToPlainText(submission.value?.finalMarkdown || '')
 )
 // Korean (and other IME) typing logs every keystroke as key='Process' with no
 // character data, so per-keystroke text reconstruction is impossible. When a
@@ -386,6 +378,9 @@ const imeDominated = computed(() => {
 const hasSnapshots = computed(() =>
   events.value.some(e => e.type === 'snapshot' && typeof e.meta?.text === 'string')
 )
+const hasDocumentFrames = computed(() =>
+  events.value.some(e => e.type === 'document_frame' && e.meta?.v === 3)
+)
 function composeSyllable(cho: string, jung: string, jong: string): string {
   const ci = CHO_LIST.indexOf(cho), ji = JUNG_LIST.indexOf(jung), gi = JONG_LIST.indexOf(jong)
   if (ci < 0 || ji < 0 || gi < 0) return (cho || '') + (jung || '') + (jong || '')
@@ -401,6 +396,7 @@ const replayState = computed(() => {
     return {
       text: '',
       cursorPos: 0,
+      selectionLength: 0,
       keystrokeCount: 0,
       pasteCount: 0,
       blurCount: 0,
@@ -411,6 +407,89 @@ const replayState = computed(() => {
   }
 
   const thresholdTime = minTime.value + replayCurrentMs.value
+
+  // ── Authoritative document-frame replay (v3) ──
+  // These compact patches are produced from the editor's actual post-transaction
+  // state. Korean composition is therefore replayed exactly as the browser
+  // committed it, without guessing Hangul syllables from keydown values.
+  if (hasDocumentFrames.value) {
+    const orderedEvents = [...events.value].sort((a, b) => {
+      const byTime = (a.timestamp || 0) - (b.timestamp || 0)
+      return byTime || (a.seq || 0) - (b.seq || 0)
+    })
+    const documentState = replayDocumentFrames(orderedEvents, thresholdTime)
+    let text = documentState?.text ?? ''
+    let cursorPos = documentState?.cursorPosition ?? text.length
+    let selectionLength = documentState?.selectionLength ?? 0
+    let frameChainValid = documentState?.valid ?? false
+    let keystrokeCount = 0
+    let pasteCount = 0
+    let blurCount = 0
+    let activeStatus = t('runtime.m_5d31848228b8')
+    const logs: string[] = []
+
+    for (const e of orderedEvents) {
+      if (e.timestamp > thresholdTime) break
+      const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
+      const timeStr = formatReplayTime(relativeSec)
+
+      if (e.type === 'keydown') {
+        const key = e.meta?.key
+        if (!(e.meta?.mod && key !== 'Backspace') && !(key && NON_CONTENT_KEYS.has(key))) {
+          keystrokeCount++
+        }
+      } else if (e.type === 'paste') {
+        activeStatus = t('runtime.m_5d31848228b8')
+        if (e.meta?.internal) {
+          logs.push(`[${timeStr}] ${t('replay.internalPaste', { count: e.meta?.pasteLength || 0 })}`)
+        } else {
+          pasteCount++
+          logs.push(`[${timeStr}] ${t('replay.externalPaste', { count: e.meta?.pasteLength || 0 })}`)
+        }
+      } else if (e.type === 'blur') {
+        blurCount++
+        activeStatus = t('runtime.m_2520ef21787d')
+        logs.push(`[${timeStr}] ${t('replay.editorBlur')}`)
+      } else if (e.type === 'focus') {
+        activeStatus = t('runtime.m_5d31848228b8')
+        logs.push(`[${timeStr}] ${t('replay.editorFocus')}`)
+      }
+    }
+
+    // Submission can race the final telemetry acknowledgement. At the absolute
+    // end of replay, reconcile to the persisted final document so the last
+    // visible frame can never omit a last-second edit.
+    if (
+      replayCurrentMs.value >= replayTotalMs.value &&
+      submission.value?.finalMarkdown !== undefined &&
+      text !== finalPlain.value
+    ) {
+      text = finalPlain.value
+      cursorPos = text.length
+      selectionLength = 0
+    }
+
+    if (!frameChainValid) {
+      selectionLength = 0
+      cursorPos = Math.min(text.length, cursorPos)
+    }
+
+    const kd = orderedEvents.filter(e => e.type === 'keydown')
+    const recent = kd.filter(
+      e => e.timestamp >= thresholdTime - 30000 && e.timestamp <= thresholdTime,
+    ).length
+    return {
+      text,
+      cursorPos,
+      selectionLength,
+      keystrokeCount,
+      pasteCount,
+      blurCount,
+      currentWpm: Math.round(recent / 2.5),
+      activeStatus,
+      logs: logs.slice(-15).reverse(),
+    }
+  }
 
   // ── Snapshot replay (root fix): if the session recorded plain-text snapshots,
   // show the most recent snapshot at or before the current replay time. This is
@@ -452,6 +531,7 @@ const replayState = computed(() => {
     return {
       text,
       cursorPos: text.length,
+      selectionLength: 0,
       keystrokeCount,
       pasteCount,
       blurCount,
@@ -488,6 +568,7 @@ const replayState = computed(() => {
     return {
       text: fp.slice(0, revealLen),
       cursorPos: revealLen,
+      selectionLength: 0,
       keystrokeCount: soFar,
       pasteCount,
       blurCount,
@@ -801,6 +882,7 @@ const replayState = computed(() => {
   return {
     text,
     cursorPos,
+    selectionLength: 0,
     keystrokeCount,
     pasteCount,
     blurCount,
@@ -1308,7 +1390,13 @@ const backLabel = computed(() =>
             </div>
             <div class="flex-1 whitespace-pre-wrap break-all leading-relaxed pr-8 pt-4">
               <template v-if="replayState.cursorPos !== undefined">
-                <span>{{ replayState.text.slice(0, replayState.cursorPos) }}</span><span class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"></span><span>{{ replayState.text.slice(replayState.cursorPos) }}</span>
+                <span>{{ replayState.text.slice(0, replayState.cursorPos) }}</span><span
+                  v-if="replayState.selectionLength > 0"
+                  class="rounded-sm bg-primary/20 text-text-primary"
+                >{{ replayState.text.slice(replayState.cursorPos, replayState.cursorPos + replayState.selectionLength) }}</span><span
+                  v-else
+                  class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"
+                ></span><span>{{ replayState.text.slice(replayState.cursorPos + replayState.selectionLength) }}</span>
               </template>
               <template v-else>
                 {{ replayState.text }}<span class="w-2 h-4 bg-primary inline-block animate-pulse align-middle ml-0.5"></span>

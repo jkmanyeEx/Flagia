@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { watch, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { createDocumentFrame } from '../utils/replayFrames'
 
 const { t } = useI18n()
 
@@ -13,9 +14,22 @@ const props = defineProps<{
   placeholder?: string
 }>()
 
-const emit = defineEmits(['update:modelValue', 'keydown', 'paste', 'blur', 'focus'])
+const emit = defineEmits([
+  'update:modelValue',
+  'keydown',
+  'paste',
+  'blur',
+  'focus',
+  'document-frame',
+])
 
 const isFocused = ref(false)
+let telemetryReady = false
+let suppressTelemetry = false
+let telemetryBasePending = true
+let lastTelemetryText = ''
+let lastTelemetryCursor = 0
+let lastTelemetrySelectionLength = 0
 
 // Pre-transaction selection capture — set by ProseMirror's editorProps hooks
 // BEFORE the transaction modifies the document. This is the key fix for accurate
@@ -32,6 +46,16 @@ function captureSelection(view: any) {
     const selectionLength = view.state.doc.textBetween(0, end, '\n').length - cursor
     lastSelectionBeforeEvent.value = { cursor, selectionLength }
   } catch { /* noop */ }
+}
+
+function readPlainEditorState(editorInstance: any) {
+  const { doc, selection } = editorInstance.state
+  const start = Math.min(selection.anchor, selection.head)
+  const end = Math.max(selection.anchor, selection.head)
+  const text = doc.textBetween(0, doc.content.size, '\n')
+  const cursorPosition = doc.textBetween(0, start, '\n').length
+  const selectionLength = doc.textBetween(start, end, '\n').length
+  return { text, cursorPosition, selectionLength }
 }
 
 const editor = useEditor({
@@ -68,6 +92,47 @@ const editor = useEditor({
   onUpdate: ({ editor }) => {
     emit('update:modelValue', editor.getHTML())
   },
+  onCreate: ({ editor }) => {
+    const state = readPlainEditorState(editor)
+    lastTelemetryText = state.text
+    lastTelemetryCursor = state.cursorPosition
+    lastTelemetrySelectionLength = state.selectionLength
+    telemetryReady = true
+  },
+  onTransaction: ({ editor, transaction }) => {
+    if (
+      !telemetryReady ||
+      suppressTelemetry ||
+      props.disabled ||
+      (!transaction.docChanged && !transaction.selectionSet)
+    ) {
+      return
+    }
+
+    const next = readPlainEditorState(editor)
+    if (
+      next.text === lastTelemetryText &&
+      next.cursorPosition === lastTelemetryCursor &&
+      next.selectionLength === lastTelemetrySelectionLength
+    ) {
+      return
+    }
+
+    emit(
+      'document-frame',
+      createDocumentFrame(
+        lastTelemetryText,
+        next.text,
+        next.cursorPosition,
+        next.selectionLength,
+        telemetryBasePending,
+      ),
+    )
+    telemetryBasePending = false
+    lastTelemetryText = next.text
+    lastTelemetryCursor = next.cursorPosition
+    lastTelemetrySelectionLength = next.selectionLength
+  },
   onFocus: () => {
     isFocused.value = true
     emit('focus')
@@ -81,7 +146,16 @@ const editor = useEditor({
 watch(() => props.modelValue, (value) => {
   const isSame = editor.value?.getHTML() === value
   if (!isSame) {
+    suppressTelemetry = true
     editor.value?.commands.setContent(value, { emitUpdate: false })
+    if (editor.value) {
+      const state = readPlainEditorState(editor.value)
+      lastTelemetryText = state.text
+      lastTelemetryCursor = state.cursorPosition
+      lastTelemetrySelectionLength = state.selectionLength
+      telemetryBasePending = true
+    }
+    suppressTelemetry = false
   }
 })
 

@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pool from './database';
 import { verifyToken, AuthPayload } from './middleware/auth';
 import { finalizeSubmission } from './services/submissionFinalizer';
+import { filterTelemetryEvents } from './telemetryValidation';
 
 interface ClientState {
   ws: WebSocket;
@@ -328,6 +329,13 @@ export function initWebSocket(server: HttpServer) {
             const { events, batchId } = payload;
             if (!Array.isArray(events) || events.length === 0) break;
 
+            const maxContentLength = clientState.joinedSubmission?.maxContentLength
+              || MAX_LIVE_CONTENT_CHARS;
+            const {
+              accepted: acceptedEvents,
+              rejectedCount,
+            } = filterTelemetryEvents(events, maxContentLength);
+
             // Optional: verify hash chain integrity
             // const chainResult = verifyHashChain(events);
             // if (!chainResult.valid) { ... flag tampering ... }
@@ -345,7 +353,7 @@ export function initWebSocket(server: HttpServer) {
               try { existingEvents = JSON.parse(session.events_blob); } catch { /* reset */ }
             }
 
-            existingEvents.push(...events);
+            existingEvents.push(...acceptedEvents);
 
             await pool.query(
               'UPDATE sessions SET events_blob = ? WHERE id = ?',
@@ -354,7 +362,12 @@ export function initWebSocket(server: HttpServer) {
 
             ws.send(JSON.stringify({
               type: 'batch_ack',
-              payload: { received: events.length, total: existingEvents.length, batchId },
+              payload: {
+                received: acceptedEvents.length,
+                rejected: rejectedCount,
+                total: existingEvents.length,
+                batchId,
+              },
             }));
 
             // Live sync: if this batch carried a snapshot, push the latest plain
@@ -363,9 +376,9 @@ export function initWebSocket(server: HttpServer) {
               clientState.submissionId &&
               clientState.joinedSubmission?.submissionId === clientState.submissionId
             ) {
-              const snaps = events.filter(
+              const snaps = acceptedEvents.filter(
                 (e: any) => e.type === 'snapshot' && typeof e.meta?.text === 'string'
-              );
+              ) as any[];
               if (snaps.length > 0) {
                 const latestSnapshot = snaps[snaps.length - 1];
                 broadcastSubmissionContent(clientState.submissionId, latestSnapshot.meta.text, {

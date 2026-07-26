@@ -8,6 +8,10 @@ import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
 import { translateError } from '../i18n'
+import {
+  htmlToPlainText,
+  type DocumentFrameMeta,
+} from '../utils/replayFrames'
 
 const API = resolveApiBase()
 const WS_URL = resolveWsUrl()
@@ -158,15 +162,19 @@ function countGraphemes(text: string): number {
 }
 
 function stripHtml(html: string): string {
-  return (html || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<hr\s*\/?>/gi, '\n')
-    .replace(/<\/(?:p|div|h[1-6]|li|blockquote|tr)>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+  return htmlToPlainText(html)
+}
+
+function captureDocumentFrame(meta: DocumentFrameMeta) {
+  if (isLocked.value || submitted.value) return
+  eventBuffer.push({
+    seq: ++sequenceCounter,
+    timestamp: Date.now(),
+    iki: 0,
+    type: 'document_frame',
+    meta,
+    currentHash: '',
+  })
 }
 
 function captureSnapshot(force = false) {
@@ -843,6 +851,7 @@ async function confirmSubmit() {
                 :placeholder="$t('auto.m_f6a0278341e1')"
                 @keydown="(e, selection) => handleKeydown(e, selection)"
                 @paste="(e, selection) => handlePaste(e, selection)"
+                @document-frame="captureDocumentFrame"
               />
             </div>
 

@@ -1,3 +1,51 @@
+# Exact Korean/IME replay walkthrough
+
+## Student source document
+
+![Korean source document](walkthrough-assets/korean-replay-student-source.png)
+
+- The connected student editor finished with `안녕하세요. 정말 괜찮습니다.`.
+- The browser flow exercised Korean insertion, deletion, full-range selection,
+  replacement, and final submission.
+- The mock protocol captured 21 authoritative v3 document frames. Every frame
+  included a compact text patch plus its post-transaction cursor and selection.
+- Two frames recorded full-document selections (`selectionLength` 15 and 14),
+  proving that selection-only transactions are preserved instead of forcing the
+  replay cursor to the document end.
+- The final periodic snapshot, live teacher relay, and submitted source all
+  matched the same Korean text.
+
+## Replay start
+
+![Initial Korean replay frame](walkthrough-assets/korean-replay-teacher-initial.png)
+
+- At timeline start, replay renders the first stored editor state immediately.
+- The caret comes from the recorded frame rather than the legacy Hangul
+  automaton or a 2-second snapshot approximation.
+
+## Replay completion
+
+![Final Korean replay frame](walkthrough-assets/korean-replay-teacher-final.png)
+
+- Playback at 50× traversed the complete recorded timeline and ended at
+  `안녕하세요. 정말 괜찮습니다.`.
+- The final replay frame exactly matched the submitted document.
+- The browser controller injects text through paste-like browser input, so the
+  paste counter in these visual fixtures is not representative of a physical
+  keyboard. Deterministic replay tests separately cover intermediate Hangul
+  composition states, compound vowels/final consonants, Backspace, mid-document
+  replacement, mixed Korean/English/emoji, snapshot recovery, and legacy
+  fallback detection.
+
+## Verification
+
+- Frontend `test:replay` passed.
+- Frontend production type-check and build passed.
+- Backend document-frame validation test and production build passed.
+- `git diff --check` passed.
+
+---
+
 # Theme, language, and app-shell walkthrough
 
 ## Settings — Korean light theme
