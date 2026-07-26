@@ -298,6 +298,14 @@ onBeforeUnmount(() => {
   color: var(--color-text-primary);
 }
 
+/* The global [tabindex]:focus-visible rule otherwise draws a second outline
+   around Tiptap's inner editable surface. The wrapper already owns the editor's
+   focus ring, so that inner outline appears as a stray horizontal bar. */
+.rich-editor-wrapper .ProseMirror:focus,
+.rich-editor-wrapper .ProseMirror:focus-visible {
+  outline: none;
+}
+
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;

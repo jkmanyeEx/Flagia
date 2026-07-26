@@ -1057,7 +1057,7 @@ select.input {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0;
+  padding: 1rem 0 0;
 }
 
 .mobile-menu-trigger {
