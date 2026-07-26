@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
@@ -8,6 +9,7 @@ import { resolveWsUrl } from '../composables/apiHost'
 
 const route = useRoute()
 const router = useRouter()
+const { t, locale } = useI18n()
 const { user, token } = useAuth()
 // Teacher-style access (replay room, grading, "submissions" nav). Admins are
 // treated as staff here so they get the same review tools as teachers.
@@ -83,7 +85,7 @@ onMounted(async () => {
     data.value = analysisData
     events.value = eventsData.events || []
   } catch (e: any) {
-    error.value = e.message || '분석 데이터를 불러올 수 없습니다'
+    error.value = e.message || t('runtime.m_d206df6b34a9')
   } finally {
     loading.value = false
   }
@@ -112,7 +114,7 @@ function flagColor(status: string) {
   return { GREEN: '#16A34A', AMBER: '#D97706', RED: '#DC2626' }[status] || '#9CA3AF'
 }
 function flagLabel(status: string) {
-  return { GREEN: '🟢 안전', AMBER: '🟡 주의', RED: '🔴 위험' }[status] || status
+  return { GREEN: t('runtime.m_7126335957e5'), AMBER: t('runtime.m_84eeb3accb1c'), RED: t('runtime.m_e2dfd8d54b03') }[status] || status
 }
 function flagBg(status: string) {
   return { GREEN: 'bg-flag-green-bg', AMBER: 'bg-flag-amber-bg', RED: 'bg-flag-red-bg' }[status] || ''
@@ -129,13 +131,19 @@ function componentIcon(key: string) {
 }
 
 function formatDuration(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)}초`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}분 ${Math.round(seconds % 60)}초`
-  return `${Math.floor(seconds / 3600)}시간 ${Math.floor((seconds % 3600) / 60)}분`
+  if (seconds < 60) return t('common.seconds', { count: Math.round(seconds) })
+  if (seconds < 3600) {
+    return `${t('common.minutes', { count: Math.floor(seconds / 60) })} ${t('common.seconds', { count: Math.round(seconds % 60) })}`
+  }
+  return `${t('common.hours', { count: Math.floor(seconds / 3600) })} ${t('common.minutes', { count: Math.floor((seconds % 3600) / 60) })}`
+}
+
+function formatReplayTime(seconds: number) {
+  return `${t('common.minutes', { count: Math.floor(seconds / 60) })} ${t('common.seconds', { count: seconds % 60 })}`
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleString('ko-KR', {
+  return new Date(d).toLocaleString(locale.value === 'ko' ? 'ko-KR' : 'en-US', {
     year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
@@ -309,7 +317,7 @@ function setSpeed(s: number) {
 
 // ── Hangul IME automaton for replay ──
 // Browser keydown events during Korean composition arrive as individual
-// compatibility jamo (e.g. ㅎ ㅏ ㄴ for 한). We assemble them into syllables
+// Compatibility jamo may arrive as separate characters; assemble syllables
 // using the standard 2-set Hangul automaton.
 const CHO_LIST  = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
 const JUNG_LIST = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ']
@@ -397,7 +405,7 @@ const replayState = computed(() => {
       pasteCount: 0,
       blurCount: 0,
       currentWpm: 0,
-      activeStatus: '대기 중',
+      activeStatus: t('runtime.m_ec425b26f23e'),
       logs: [],
     }
   }
@@ -412,31 +420,31 @@ const replayState = computed(() => {
   if (hasSnapshots.value) {
     let text = templatePlain.value
     let keystrokeCount = 0, pasteCount = 0, blurCount = 0
-    let activeStatus = '작성 중'
+    let activeStatus = t('runtime.m_5d31848228b8')
     const logs: string[] = []
     for (const e of events.value) {
       if (e.timestamp > thresholdTime) break
       const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
-      const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
+      const timeStr = formatReplayTime(relativeSec)
       if (e.type === 'snapshot' && typeof e.meta?.text === 'string') {
         text = e.meta.text
       } else if (e.type === 'keydown') {
         const key = e.meta?.key
         if (!(e.meta?.mod && key !== 'Backspace') && !(key && NON_CONTENT_KEYS.has(key))) keystrokeCount++
       } else if (e.type === 'paste') {
-        activeStatus = '작성 중'
+        activeStatus = t('runtime.m_5d31848228b8')
         if (e.meta?.internal) {
-          logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${e.meta?.pasteLength || 0}자)`)
+          logs.push(`[${timeStr}] ${t('replay.internalPaste', { count: e.meta?.pasteLength || 0 })}`)
         } else {
           pasteCount++
-          logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`)
+          logs.push(`[${timeStr}] ${t('replay.externalPaste', { count: e.meta?.pasteLength || 0 })}`)
         }
       } else if (e.type === 'blur') {
-        blurCount++; activeStatus = '화면 이탈'
-        logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`)
+        blurCount++; activeStatus = t('runtime.m_2520ef21787d')
+        logs.push(`[${timeStr}] ${t('replay.editorBlur')}`)
       } else if (e.type === 'focus') {
-        activeStatus = '작성 중'
-        logs.push(`[${timeStr}] ✏️ 에디터로 복귀`)
+        activeStatus = t('runtime.m_5d31848228b8')
+        logs.push(`[${timeStr}] ${t('replay.editorFocus')}`)
       }
     }
     const kd = events.value.filter(e => e.type === 'keydown')
@@ -464,17 +472,17 @@ const replayState = computed(() => {
     const revealLen = total > 0 ? Math.round(fp.length * (soFar / total)) : fp.length
     let pasteCount = 0, blurCount = 0
     const logs: string[] = []
-    let activeStatus = '작성 중 (한글 입력)'
+    let activeStatus = t('runtime.m_501ef9ead011')
     for (const e of events.value) {
       if (e.timestamp > thresholdTime) break
       const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
-      const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
+      const timeStr = formatReplayTime(relativeSec)
       if (e.type === 'paste') {
-        if (e.meta?.internal) { logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${e.meta?.pasteLength || 0}자)`) }
-        else { pasteCount++; logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${e.meta?.pasteLength || 0}자)`) }
+        if (e.meta?.internal) { logs.push(`[${timeStr}] ${t('replay.internalPaste', { count: e.meta?.pasteLength || 0 })}`) }
+        else { pasteCount++; logs.push(`[${timeStr}] ${t('replay.externalPaste', { count: e.meta?.pasteLength || 0 })}`) }
       }
-      else if (e.type === 'blur') { blurCount++; activeStatus = '화면 이탈'; logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`) }
-      else if (e.type === 'focus') { activeStatus = '작성 중 (한글 입력)'; logs.push(`[${timeStr}] ✏️ 에디터로 복귀`) }
+      else if (e.type === 'blur') { blurCount++; activeStatus = t('runtime.m_2520ef21787d'); logs.push(`[${timeStr}] ${t('replay.editorBlur')}`) }
+      else if (e.type === 'focus') { activeStatus = t('runtime.m_501ef9ead011'); logs.push(`[${timeStr}] ${t('replay.editorFocus')}`) }
     }
     const recent = kd.filter(e => e.timestamp >= thresholdTime - 30000 && e.timestamp <= thresholdTime).length
     return {
@@ -510,7 +518,7 @@ const replayState = computed(() => {
   let keystrokeCount = 0
   let pasteCount = 0
   let blurCount = 0
-  let activeStatus = '작성 중'
+  let activeStatus = t('runtime.m_5d31848228b8')
   const logs: string[] = []
 
   // ── Telemetry version detection ──
@@ -541,7 +549,7 @@ const replayState = computed(() => {
     if (e.timestamp > thresholdTime) break
 
     const relativeSec = Math.round((e.timestamp - minTime.value) / 1000)
-    const timeStr = `${Math.floor(relativeSec / 60)}분 ${relativeSec % 60}초`
+    const timeStr = formatReplayTime(relativeSec)
 
     // Korean dedup for legacy sessions: skip rapid duplicate jamo keydowns
     if (!isV2 && e.type === 'keydown' && e.meta?.key && isJamo(e.meta.key)) {
@@ -753,7 +761,7 @@ const replayState = computed(() => {
     } else if (e.type === 'paste') {
       flushBuf()
       const len = e.meta?.pasteLength || 0
-      const pastedText = e.meta?.pasteContent || `[📋 ${len}자]`
+      const pastedText = e.meta?.pasteContent || t('replay.pastedText', { count: len })
 
       // If selection exists, delete the range before pasting
       if (selLen > 0) {
@@ -763,19 +771,19 @@ const replayState = computed(() => {
       committed = committed.slice(0, pos) + pastedText + committed.slice(pos)
       pos += pastedText.length
       if (e.meta?.internal) {
-        logs.push(`[${timeStr}] 📋 내부 복사·붙여넣기 (허용, ${len}자)`)
+        logs.push(`[${timeStr}] ${t('replay.internalPaste', { count: len })}`)
       } else {
         pasteCount++
-        logs.push(`[${timeStr}] 📋 붙여넣기 실행 (${len}자)`)
+        logs.push(`[${timeStr}] ${t('replay.externalPaste', { count: len })}`)
       }
     } else if (e.type === 'blur') {
       flushBuf()
       blurCount++
-      activeStatus = '화면 이탈'
-      logs.push(`[${timeStr}] ⚠️ 에디터를 벗어남`)
+      activeStatus = t('runtime.m_2520ef21787d')
+      logs.push(`[${timeStr}] ${t('replay.editorBlur')}`)
     } else if (e.type === 'focus') {
-      activeStatus = '작성 중'
-      logs.push(`[${timeStr}] ✏️ 에디터로 복귀`)
+      activeStatus = t('runtime.m_5d31848228b8')
+      logs.push(`[${timeStr}] ${t('replay.editorFocus')}`)
     }
   }
 
@@ -837,7 +845,7 @@ async function submitGrade() {
       data.value.submission.feedback = feedback.value
     }
   } catch (e: any) {
-    alert(e.message || '채점 등록 중 오류가 발생했습니다')
+    alert(e.message || t('runtime.m_1bdb59fb6577'))
   } finally {
     gradingLoading.value = false
   }
@@ -863,7 +871,7 @@ function goBack() {
 }
 
 const backLabel = computed(() =>
-  isStaff.value ? '제출 목록으로 돌아가기' : '내 과제로 돌아가기'
+  isStaff.value ? t('runtime.m_c6a71f6eef0a') : t('runtime.m_e9b5a26d42d2')
 )
 </script>
 
@@ -872,7 +880,7 @@ const backLabel = computed(() =>
   <div v-if="loading" class="min-h-screen flex items-center justify-center bg-background">
     <div class="flex flex-col items-center gap-3">
       <div class="w-10 h-10 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-sm text-text-secondary">분석 데이터를 불러오는 중...</span>
+      <span class="text-sm text-text-secondary">{{ $t('auto.m_fb1d2fd1a561') }}</span>
     </div>
   </div>
 
@@ -881,7 +889,7 @@ const backLabel = computed(() =>
     <div class="card p-8 text-center max-w-md">
       <div class="text-3xl mb-3">❌</div>
       <p class="text-text-primary font-medium">{{ error }}</p>
-      <button @click="goBack" class="btn btn-outline mt-4">돌아가기</button>
+      <button @click="goBack" class="btn btn-outline mt-4">{{ $t('auto.m_1a7f31cadb8c') }}</button>
     </div>
   </div>
 
@@ -898,10 +906,10 @@ const backLabel = computed(() =>
       </button>
       <div class="flex items-center gap-2 text-sm text-text-muted">
         <button @click="goBack" class="hover:text-primary transition-colors">
-          {{ isStaff ? '제출 목록' : '내 과제' }}
+          {{ isStaff ? t('runtime.m_e7288e1cdda4') : t('runtime.m_a2c25143883d') }}
         </button>
         <span>/</span>
-        <span class="text-text-secondary">분석 리포트</span>
+        <span class="text-text-secondary">{{ $t('auto.m_7da98d316224') }}</span>
       </div>
     </div>
 
@@ -915,22 +923,20 @@ const backLabel = computed(() =>
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'report' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>📊</span> 분석 리포트
-      </button>
+        <span>📊</span> {{ $t('auto.m_7da98d316224') }} </button>
       <button 
         v-if="isStaff && events.length > 0"
         @click="activeTab = 'replay'" 
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'replay' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>🎥</span> 작성 리플레이 룸
-      </button>
+        <span>🎥</span> {{ $t('auto.m_0a8993f745da') }} </button>
       <button 
         @click="activeTab = 'content'" 
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'content' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>📝</span> {{ isStaff ? '본문 집중 분석 & 채점' : '제출 내용 & 평가' }}
+        <span>📝</span> {{ isStaff ? t('runtime.m_9a65b829653d') : t('runtime.m_2e36bb0516b0') }}
       </button>
     </div>
 
@@ -964,7 +970,7 @@ const backLabel = computed(() =>
           <!-- Info -->
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-3">
-              <h1 class="text-xl font-bold text-text-primary">글쓰기 무결성 분석 리포트</h1>
+              <h1 class="text-xl font-bold text-text-primary">{{ $t('auto.m_d5ffaecc7150') }}</h1>
               <span class="badge text-sm" :class="{
                 'badge-green': analysis.flagStatus === 'GREEN',
                 'badge-amber': analysis.flagStatus === 'AMBER',
@@ -1030,9 +1036,9 @@ const backLabel = computed(() =>
               </div>
               <p class="text-xs text-text-secondary leading-relaxed">{{ comp.description }}</p>
               <div class="flex items-center gap-3 mt-2 text-xs text-text-muted">
-                <span>점수: <strong>{{ comp.raw }}</strong> / 100</span>
-                <span>가중치: {{ (comp.weight * 100).toFixed(0) }}%</span>
-                <span>기여: {{ comp.weighted.toFixed(1) }}점</span>
+                <span>{{ $t('auto.m_4a957a486ddf') }} <strong>{{ comp.raw }}</strong> / 100</span>
+                <span>{{ $t('auto.m_d631d3bafcc1') }} {{ (comp.weight * 100).toFixed(0) }}%</span>
+                <span>{{ $t('auto.m_44a41c707993') }} {{ comp.weighted.toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
               </div>
             </div>
           </div>
@@ -1042,20 +1048,20 @@ const backLabel = computed(() =>
       <!-- Score reconciliation: shown when a structural penalty was applied so
            the gauge no longer equals the simple sum of the component cards. -->
       <div v-if="isStaff && analysis && analysis.scoreAdjustments && analysis.scoreAdjustments.length > 0" class="card p-6">
-        <h2 class="text-sm font-semibold text-text-primary mb-3">최종 점수 산출 내역</h2>
+        <h2 class="text-sm font-semibold text-text-primary mb-3">{{ $t('auto.m_66c2897017ed') }}</h2>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between items-center">
-            <span class="text-text-secondary">구성요소 가중 합계</span>
-            <span class="font-mono font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}점</span>
+            <span class="text-text-secondary">{{ $t('auto.m_1a92b5b9d6e4') }}</span>
+            <span class="font-mono font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
           <div v-for="(adj, i) in analysis.scoreAdjustments" :key="i" class="flex justify-between items-center text-flag-red">
             <span>⚠️ {{ adj.label }}</span>
-            <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}점</span>
+            <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
 
           <!-- Copy-typing (transcription) penalty breakdown: each detection metric -->
           <div v-if="analysis.transcription && analysis.transcription.triggered" class="mt-1 rounded-lg bg-background border border-border p-3">
-            <div class="text-xs font-semibold text-flag-red mb-2">베껴쓰기 감점 세부 지표</div>
+            <div class="text-xs font-semibold text-flag-red mb-2">{{ $t('auto.m_b7041f9a127a') }}</div>
             <div class="space-y-1">
               <div v-for="(row, i) in analysis.transcription.rows" :key="i" class="flex justify-between items-center text-xs">
                 <span class="text-text-secondary">{{ row.label }}</span>
@@ -1065,26 +1071,23 @@ const backLabel = computed(() =>
           </div>
 
           <div class="flex justify-between items-center pt-2 border-t border-border">
-            <span class="font-semibold text-text-primary">최종 Flagia Score</span>
+            <span class="font-semibold text-text-primary">{{ $t('auto.m_989e36dca738') }}</span>
             <span class="font-mono font-bold text-base" :style="{ color: flagColor(analysis.flagStatus || '') }">
-              {{ (analysis.flagiaScore ?? 0).toFixed(1) }}점
-            </span>
+              {{ (analysis.flagiaScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }} </span>
           </div>
         </div>
-        <p class="text-xs text-text-muted mt-3 leading-relaxed">
-          개별 지표가 정상 범위에 있어도, 작성 과정 전반의 패턴(예: 충분한 분량을 거의 수정 없이 그대로 입력)이 감지되면 종합 점수에 추가 감점이 적용됩니다.
-        </p>
+        <p class="text-xs text-text-muted mt-3 leading-relaxed"> {{ $t('auto.m_84df3ec2fbe9') }} </p>
       </div>
 
       <!-- Writing Timeline with custom hover tooltips (staff only) -->
       <div v-if="isStaff && timeline && timeline.length > 0" class="card p-6">
         <div class="flex items-center justify-between mb-4 border-b border-border pb-3">
           <div>
-            <h2 class="text-sm font-semibold text-text-primary mb-1">글쓰기 타임라인 (상호작용 뷰)</h2>
-            <p class="text-xs text-text-muted font-normal">타임라인 박스에 마우스를 올리면 구간별 상세 이력과 지표를 볼 수 있습니다.</p>
+            <h2 class="text-sm font-semibold text-text-primary mb-1">{{ $t('auto.m_07a985f1d93d') }}</h2>
+            <p class="text-xs text-text-muted font-normal">{{ $t('auto.m_51bb1c90139b') }}</p>
           </div>
           <div class="flex items-center gap-2 text-xs">
-            <span class="text-text-secondary font-medium">집계 단위:</span>
+            <span class="text-text-secondary font-medium">{{ $t('auto.m_7afcaa0956c6') }}</span>
             <input
               type="range"
               min="5"
@@ -1093,7 +1096,7 @@ const backLabel = computed(() =>
               v-model.number="bucketSizeSec"
               class="w-32 accent-primary cursor-pointer"
             />
-            <span class="font-mono bg-background px-1.5 py-0.5 rounded border border-border">{{ bucketSizeSec }}초</span>
+            <span class="font-mono bg-background px-1.5 py-0.5 rounded border border-border">{{ bucketSizeSec }}{{ $t('auto.m_3845248e2861') }}</span>
           </div>
         </div>
 
@@ -1139,28 +1142,28 @@ const backLabel = computed(() =>
                   }"
                 >
                   <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
-                    <span>구간 #{{ Number(i) + 1 }}</span>
-                    <span>⏰ {{ Math.round(bucket.startMs / 1000) }}초 ~ {{ Math.round(bucket.endMs / 1000) }}초</span>
+                    <span>{{ $t('auto.m_7f8f9c6c5a8a') }}{{ Number(i) + 1 }}</span>
+                    <span>⏰ {{ Math.round(bucket.startMs / 1000) }}{{ $t('auto.m_54c5f6a70d25') }} {{ Math.round(bucket.endMs / 1000) }}{{ $t('auto.m_3845248e2861') }}</span>
                   </div>
                   <div class="flex justify-between">
-                    <span class="text-slate-400">⌨️ 키 입력</span>
-                    <span class="font-bold">{{ bucket.keystrokeCount }}회</span>
+                    <span class="text-slate-400">{{ $t('auto.m_154c4f57bfc3') }}</span>
+                    <span class="font-bold">{{ bucket.keystrokeCount }}{{ $t('auto.m_2fc05c02be34') }}</span>
                   </div>
                   <div class="flex justify-between">
-                    <span class="text-slate-400">⏱️ 평균 IKI</span>
+                    <span class="text-slate-400">{{ $t('auto.m_ff6c58848174') }}</span>
                     <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
                   </div>
                   <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
-                    <span>📋 붙여넣기</span>
-                    <span>{{ bucket.pasteCount }}회</span>
+                    <span>{{ $t('auto.m_879b30a54395') }}</span>
+                    <span>{{ bucket.pasteCount }}{{ $t('auto.m_2fc05c02be34') }}</span>
                   </div>
                   <div v-if="bucket.internalPasteCount && bucket.internalPasteCount > 0" class="flex justify-between text-sky-400 font-semibold">
-                    <span>📋 내부 붙여넣기 (허용)</span>
-                    <span>{{ bucket.internalPasteCount }}회</span>
+                    <span>{{ $t('auto.m_a0febb1c83f2') }}</span>
+                    <span>{{ bucket.internalPasteCount }}{{ $t('auto.m_2fc05c02be34') }}</span>
                   </div>
                   <div v-if="bucket.isBlurred" class="flex justify-between text-amber-400 font-semibold">
-                    <span>⚠️ 에디터 이탈</span>
-                    <span>감지됨</span>
+                    <span>{{ $t('auto.m_8529765edd85') }}</span>
+                    <span>{{ $t('auto.m_c16a8e9c96cc') }}</span>
                   </div>
                 </div>
               </div>
@@ -1170,87 +1173,82 @@ const backLabel = computed(() =>
 
         <div class="flex items-center gap-4 mt-4 text-xs text-text-muted">
           <div class="flex items-center gap-1.5">
-            <div class="w-3 h-3 rounded-sm" style="background: #818CF8;"></div> 타이핑
-          </div>
+            <div class="w-3 h-3 rounded-sm" style="background: #818CF8;"></div> {{ $t('auto.m_24ad1fbd1847') }} </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-2.5 h-2.5 rounded-full" style="background: #F59E0B;"></div> 에디터 이탈
-          </div>
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #F59E0B;"></div> {{ $t('auto.m_7fbc7cdff9fa') }} </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-2.5 h-2.5 rounded-full" style="background: #EF4444;"></div> 붙여넣기
-          </div>
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #EF4444;"></div> {{ $t('auto.m_245c1c44aac2') }} </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-2.5 h-2.5 rounded-full" style="background: #38BDF8;"></div> 내부 붙여넣기(허용)
-          </div>
+            <div class="w-2.5 h-2.5 rounded-full" style="background: #38BDF8;"></div> {{ $t('auto.m_528084bcc052') }} </div>
           <div class="flex items-center gap-1.5">
-            <div class="w-3 h-3 rounded-sm" style="background: #E5E7EB;"></div> 비활동
-          </div>
+            <div class="w-3 h-3 rounded-sm" style="background: #E5E7EB;"></div> {{ $t('auto.m_40c3f7fe47ff') }} </div>
         </div>
       </div>
 
       <!-- Session Summary -->
       <div v-if="analysis?.sessionSummary" class="card p-6">
-        <h2 class="text-sm font-semibold text-text-primary mb-4">세션 요약</h2>
+        <h2 class="text-sm font-semibold text-text-primary mb-4">{{ $t('auto.m_a93734daf531') }}</h2>
         <div class="grid grid-cols-5 gap-4">
           <div class="text-center">
             <div class="text-xl font-bold text-text-primary">
               {{ formatDuration(analysis.sessionSummary.totalDurationSec ?? 0) }}
             </div>
-            <div class="text-xs text-text-muted mt-0.5">총 작성 시간</div>
+            <div class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_a907bc21f760') }}</div>
           </div>
           <div class="text-center">
             <div class="text-xl font-bold text-text-primary">
               {{ (analysis.sessionSummary.totalKeystrokes ?? 0).toLocaleString() }}
             </div>
-            <div class="text-xs text-text-muted mt-0.5">총 키 입력</div>
+            <div class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_110bf3aea528') }}</div>
           </div>
           <div class="text-center">
             <div class="text-xl font-bold text-text-primary">
               {{ (analysis.sessionSummary.totalCharactersTyped ?? 0).toLocaleString() }}
             </div>
-            <div class="text-xs text-text-muted mt-0.5">최종 글자 수</div>
+            <div class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_21a33ba6cf3c') }}</div>
           </div>
           <div class="text-center">
             <div class="text-xl font-bold text-text-primary">
               {{ analysis.sessionSummary.averageWPM ?? 0 }}
             </div>
-            <div class="text-xs text-text-muted mt-0.5">평균 WPM</div>
+            <div class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_340a055eb119') }}</div>
           </div>
           <div class="text-center">
             <div class="text-xl font-bold text-text-primary">
               {{ analysis.sessionSummary.sessionCount ?? 0 }}
             </div>
-            <div class="text-xs text-text-muted mt-0.5">세션 수</div>
+            <div class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_7cee1c9518cb') }}</div>
           </div>
         </div>
       </div>
 
       <!-- Raw Metrics (staff only — Cv/RR reveal the rubric) -->
       <div v-if="isStaff" class="card p-6">
-        <h2 class="text-sm font-semibold text-text-primary mb-4">원시 측정값</h2>
+        <h2 class="text-sm font-semibold text-text-primary mb-4">{{ $t('auto.m_ff8c3578f38b') }}</h2>
         <div v-if="analysis" class="grid grid-cols-3 gap-4 text-sm">
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">IKI 변동 계수 (Cv)</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_d7c8513a95a1') }}</div>
             <div class="font-mono font-bold mt-0.5">{{ (analysis.coefficientOfVariation ?? 0).toFixed(4) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">수정 비율 (RR)</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_794da54ad3dd') }}</div>
             <div class="font-mono font-bold mt-0.5">{{ (analysis.revisionRatio ?? 0).toFixed(4) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">붙여넣기 횟수</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_bdb7c55540ea') }}</div>
             <div class="font-mono font-bold mt-0.5">{{ analysis.totalPasteCount ?? 0 }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">총 이탈 시간</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_4e280a04d457') }}</div>
             <div class="font-mono font-bold mt-0.5">{{ formatDuration(analysis.totalBlurDuration ?? 0) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">분석 모드</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_946ae8af7bb0') }}</div>
             <div class="font-mono font-bold mt-0.5">{{ submission?.mode }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
-            <div class="text-xs text-text-muted">글자 제한</div>
-            <div class="font-mono font-bold mt-0.5">{{ (submission?.textLimit ?? 0).toLocaleString() }}자</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_3562c28be077') }}</div>
+            <div class="font-mono font-bold mt-0.5">{{ (submission?.textLimit ?? 0).toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</div>
           </div>
         </div>
       </div>
@@ -1265,16 +1263,16 @@ const backLabel = computed(() =>
               <span>🎥 Writing Process Replay</span>
               <span class="badge badge-green text-xs">Simulated Playback</span>
             </h2>
-            <p class="text-xs text-text-muted mt-0.5">학생의 키 입력 리듬과 지우기, 붙여넣기 역사를 리얼타임 시뮬레이션으로 복원합니다.</p>
-            <p v-if="imeDominated" class="text-xs text-amber-600 mt-1">⌨️ 한글(IME)로 작성된 제출물입니다. 한글 입력은 키 단위 편집 과정을 정확히 복원하기 어려워, 본문은 실제 키 입력 타이밍에 맞춰 최종 글이 점진적으로 표시됩니다(타이핑 속도·리듬 지표는 정확).</p>
+            <p class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_c50131be38e3') }}</p>
+            <p v-if="imeDominated" class="text-xs text-amber-600 mt-1">{{ $t('auto.m_8692afe2f47f') }}</p>
           </div>
           
           <div class="flex items-center gap-2 text-xs">
-            <span class="font-medium text-text-secondary">에디터 상태:</span>
+            <span class="font-medium text-text-secondary">{{ $t('auto.m_09c374fb1b7c') }}</span>
             <span class="px-2 py-0.5 rounded font-bold text-xs" :class="{
-              'bg-green-100 text-green-700': replayState.activeStatus === '작성 중',
-              'bg-amber-100 text-amber-700': replayState.activeStatus === '화면 이탈',
-              'bg-slate-100 text-slate-700': replayState.activeStatus === '대기 중',
+              'bg-green-100 text-green-700': replayState.activeStatus === t('runtime.m_5d31848228b8'),
+              'bg-amber-100 text-amber-700': replayState.activeStatus === t('runtime.m_2520ef21787d'),
+              'bg-slate-100 text-slate-700': replayState.activeStatus === t('runtime.m_ec425b26f23e'),
             }">{{ replayState.activeStatus }}</span>
           </div>
         </div>
@@ -1282,24 +1280,22 @@ const backLabel = computed(() =>
         <!-- Playback Stats Dashboard -->
         <div class="grid grid-cols-4 gap-4 mb-4">
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
-            <div class="text-xs text-text-muted">입력 글자 수</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_1fe541c264f0') }}</div>
             <div class="text-base font-bold text-text-primary mt-1">
-              {{ replayState.text.replace(/\[📋 붙여넣기: \d+자\]/g, '').length }}자
-            </div>
+              {{ replayState.text.replace(/\[📋[^\]]*\]/g, '').length }}{{ $t('auto.m_a862646b2e3b') }} </div>
           </div>
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
-            <div class="text-xs text-text-muted">실시간 속도</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_e716bfea331e') }}</div>
             <div class="text-base font-bold text-primary mt-1">{{ replayState.currentWpm }} WPM</div>
           </div>
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
-            <div class="text-xs text-text-muted">키 입력 횟수</div>
-            <div class="text-base font-bold text-text-primary mt-1">{{ replayState.keystrokeCount }}회</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_23d174446e0f') }}</div>
+            <div class="text-base font-bold text-text-primary mt-1">{{ replayState.keystrokeCount }}{{ $t('auto.m_2fc05c02be34') }}</div>
           </div>
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
-            <div class="text-xs text-text-muted">붙여넣기 / 이탈</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_4a7a19d20a0b') }}</div>
             <div class="text-base font-bold mt-1" :class="replayState.pasteCount > 0 || replayState.blurCount > 0 ? 'text-flag-amber' : 'text-flag-green'">
-              {{ replayState.pasteCount }}회 / {{ replayState.blurCount }}회
-            </div>
+              {{ replayState.pasteCount }}{{ $t('auto.m_9f090f0f02d6') }} {{ replayState.blurCount }}{{ $t('auto.m_2fc05c02be34') }} </div>
           </div>
         </div>
 
@@ -1329,9 +1325,7 @@ const backLabel = computed(() =>
               <div v-for="(log, idx) in replayState.logs" :key="idx" class="border-l-2 border-indigo-500 pl-2 py-0.5 text-slate-300">
                 {{ log }}
               </div>
-              <div v-if="replayState.logs.length === 0" class="text-slate-500 italic text-center my-auto">
-                이벤트가 발생하면 로그가 표시됩니다.
-              </div>
+              <div v-if="replayState.logs.length === 0" class="text-slate-500 italic text-center my-auto"> {{ $t('auto.m_3afe8c783401') }} </div>
             </div>
           </div>
         </div>
@@ -1340,11 +1334,11 @@ const backLabel = computed(() =>
         <div class="bg-white p-4 rounded-lg border border-border shadow-xs flex items-center justify-between gap-4">
           <!-- Play / Pause / Stop -->
           <div class="flex items-center gap-1.5">
-            <button @click="replayPlaying ? pauseReplay() : startReplay()" class="btn btn-primary btn-sm flex items-center justify-center w-10 h-9 p-0" title="재생 / 일시정지">
+            <button @click="replayPlaying ? pauseReplay() : startReplay()" class="btn btn-primary btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_39adf9c87a6a')">
               <span v-if="replayPlaying">⏸</span>
               <span v-else>▶</span>
             </button>
-            <button @click="stopReplay" class="btn btn-outline btn-sm flex items-center justify-center w-10 h-9 p-0" title="정지">
+            <button @click="stopReplay" class="btn btn-outline btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_1d441e78c39c')">
               <span>⏹</span>
             </button>
           </div>
@@ -1384,8 +1378,8 @@ const backLabel = computed(() =>
 
       <!-- Blur Intervals -->
       <div v-if="analysis?.blurIntervals && analysis.blurIntervals.length > 0" class="card p-6">
-        <h2 class="text-sm font-semibold text-text-primary mb-1">화면 이탈 기록</h2>
-        <p class="text-xs text-text-muted mb-4">작성 중 에디터를 벗어난 상세 시간 리스트</p>
+        <h2 class="text-sm font-semibold text-text-primary mb-1">{{ $t('auto.m_739ab9668f3b') }}</h2>
+        <p class="text-xs text-text-muted mb-4">{{ $t('auto.m_0812638a1220') }}</p>
 
         <div class="flex flex-col gap-1.5">
           <div v-for="(interval, i) in analysis.blurIntervals.slice(0, 20)" :key="i"
@@ -1399,8 +1393,7 @@ const backLabel = computed(() =>
               'text-flag-amber': interval.durationSec >= 10 && interval.durationSec < 60,
               'text-flag-red': interval.durationSec >= 60,
             }">
-              {{ interval.durationSec.toFixed(1) }}초
-            </span>
+              {{ interval.durationSec.toFixed(1) }}{{ $t('auto.m_3845248e2861') }} </span>
             <div class="flex-1">
               <div class="progress-bar h-1">
                 <div class="progress-fill" :class="{
@@ -1429,15 +1422,15 @@ const backLabel = computed(() =>
                 <span>📧 {{ submission?.studentEmail }}</span>
               </div>
               <div class="flex items-center gap-3 font-mono">
-                <span>글자 수: <strong>{{ finalPlain?.length || 0 }}자</strong></span>
-                <span v-if="submission?.submittedAt">제출일: {{ formatDate(submission.submittedAt) }}</span>
+                <span>{{ $t('auto.m_a02275483e95') }} <strong>{{ finalPlain?.length || 0 }}{{ $t('auto.m_a862646b2e3b') }}</strong></span>
+                <span v-if="submission?.submittedAt">{{ $t('auto.m_d00f440ba613') }} {{ formatDate(submission.submittedAt) }}</span>
               </div>
             </div>
           </div>
 
           <!-- Paper Body -->
           <div class="flex-1 markdown-body prose prose-slate max-w-none text-base leading-relaxed text-slate-800 font-sans" style="line-height: 1.8;">
-            <div class="markdown-body" v-html="marked.parse(submission?.finalMarkdown || '(내용 없음)')"></div>
+            <div class="markdown-body" v-html="marked.parse(submission?.finalMarkdown || t('common.noContent'))"></div>
           </div>
 
           <!-- Bottom Footer watermark -->
@@ -1452,14 +1445,11 @@ const backLabel = computed(() =>
         <!-- Teacher Grading Panel -->
         <div v-if="isStaff" class="card p-6 border-indigo-100 shadow-sm bg-indigo-50/20">
           <h2 class="text-sm font-bold text-indigo-900 mb-4 flex items-center gap-1.5">
-            <span>✏️</span> 제출물 채점 및 피드백
-          </h2>
+            <span>✏️</span> {{ $t('auto.m_9bc0c8862341') }} </h2>
           
           <form @submit.prevent="submitGrade" class="space-y-4">
             <div>
-              <label class="block text-xs font-semibold text-indigo-800 mb-1.5">
-                과제 점수 입력 (최대 {{ submission?.maxScore || 100 }}점)
-              </label>
+              <label class="block text-xs font-semibold text-indigo-800 mb-1.5"> {{ $t('auto.m_97da36fdea37') }} {{ submission?.maxScore || 100 }}{{ $t('auto.m_c41a39fa4771') }} </label>
               <div class="relative flex items-center">
                 <input
                   type="number"
@@ -1468,7 +1458,7 @@ const backLabel = computed(() =>
                   :max="submission?.maxScore || 100"
                   step="1"
                   required
-                  placeholder="점수 입력"
+                  :placeholder="$t('auto.m_8663bc78339f')"
                   class="input w-full pr-12 focus:border-primary no-spinner"
                 />
                 <span class="absolute right-3 text-xs font-mono text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
@@ -1476,12 +1466,10 @@ const backLabel = computed(() =>
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-indigo-800 mb-1.5">
-                학생 전달 피드백
-              </label>
+              <label class="block text-xs font-semibold text-indigo-800 mb-1.5"> {{ $t('auto.m_e1b7258a3de9') }} </label>
               <textarea 
                 v-model="feedback"
-                placeholder="과제에 대한 피드백 및 코멘트를 입력하세요..."
+                :placeholder="$t('auto.m_fca7cd97360e')"
                 rows="5"
                 class="input w-full p-3 text-xs resize-none"
               ></textarea>
@@ -1492,29 +1480,27 @@ const backLabel = computed(() =>
               class="btn btn-primary w-full text-xs font-bold py-2.5"
               :disabled="gradingLoading"
             >
-              {{ gradingLoading ? '저장 중...' : '점수 & 피드백 저장' }}
+              {{ gradingLoading ? t('runtime.m_5d687060860a') : t('runtime.m_72017ccfef43') }}
             </button>
 
-            <div v-if="gradingSuccess" class="text-center text-xs text-green-600 font-bold bg-green-50 py-1.5 rounded border border-green-200">
-              ✓ 채점 정보가 저장되었습니다!
-            </div>
+            <div v-if="gradingSuccess" class="text-center text-xs text-green-600 font-bold bg-green-50 py-1.5 rounded border border-green-200"> {{ $t('auto.m_0db380b8bab0') }} </div>
           </form>
         </div>
 
         <!-- Student View Panel: Score & Feedback display -->
         <div v-else class="card p-6">
-          <h2 class="text-sm font-bold text-text-primary mb-4">🏆 과제 평가 결과</h2>
+          <h2 class="text-sm font-bold text-text-primary mb-4">{{ $t('auto.m_d710fa1064a3') }}</h2>
           <div class="bg-slate-50 border border-slate-100 rounded-lg p-4 text-center">
-            <div class="text-xs text-text-muted">획득 점수</div>
+            <div class="text-xs text-text-muted">{{ $t('auto.m_5d63fa83d10a') }}</div>
             <div class="text-3xl font-black text-primary mt-1">
               {{ score !== null ? Math.round(Number(score)) : '-' }} <span class="text-sm font-normal text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
             </div>
           </div>
 
           <div class="mt-4">
-            <div class="text-xs font-semibold text-text-secondary mb-1">선생님 피드백</div>
+            <div class="text-xs font-semibold text-text-secondary mb-1">{{ $t('auto.m_6ffb8fd7fdb4') }}</div>
             <div class="bg-background rounded-lg p-4 text-xs text-text-primary whitespace-pre-wrap min-h-24 border border-border leading-relaxed">
-              {{ feedback || '아직 등록된 피드백이 없습니다.' }}
+              {{ feedback || t('runtime.m_6fbaaaf67ebf') }}
             </div>
           </div>
         </div>
@@ -1522,32 +1508,31 @@ const backLabel = computed(() =>
         <!-- Integrity Overview Card — staff only. Showing these metrics to
              students would reveal the rubric and invite gaming. -->
         <div v-if="isStaff" class="card p-6">
-          <h2 class="text-sm font-semibold text-text-primary mb-4">🛡️ 글쓰기 무결성 요약</h2>
+          <h2 class="text-sm font-semibold text-text-primary mb-4">{{ $t('auto.m_bfb25dd7eed3') }}</h2>
           <div class="space-y-3 text-xs">
             <div class="flex justify-between items-center py-1.5 border-b border-border">
               <span class="text-text-secondary">Flagia Score</span>
               <strong :style="{ color: flagColor(analysis?.flagStatus || '') }">
-                {{ (analysis?.flagiaScore ?? 0).toFixed(1) }}점 ({{ flagLabel(analysis?.flagStatus || '') }})
+                {{ (analysis?.flagiaScore ?? 0).toFixed(1) }}{{ $t('auto.m_3aacaa658b85') }}{{ flagLabel(analysis?.flagStatus || '') }})
               </strong>
             </div>
             <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">총 키 입력 횟수</span>
-              <strong class="text-text-primary">{{ (analysis?.sessionSummary?.totalKeystrokes ?? 0).toLocaleString() }}회</strong>
+              <span class="text-text-secondary">{{ $t('auto.m_ef3855cbe102') }}</span>
+              <strong class="text-text-primary">{{ (analysis?.sessionSummary?.totalKeystrokes ?? 0).toLocaleString() }}{{ $t('auto.m_2fc05c02be34') }}</strong>
             </div>
             <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">복사 붙여넣기</span>
+              <span class="text-text-secondary">{{ $t('auto.m_be54c882a7d0') }}</span>
               <strong :class="analysis?.totalPasteCount > 0 ? 'text-flag-amber' : 'text-flag-green'">
-                {{ analysis?.totalPasteCount ?? 0 }}회 감지
-              </strong>
+                {{ analysis?.totalPasteCount ?? 0 }}{{ $t('auto.m_0b86754a940d') }} </strong>
             </div>
             <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">외부 브라우저 이탈</span>
+              <span class="text-text-secondary">{{ $t('auto.m_9bd6b0db893b') }}</span>
               <strong :class="analysis?.totalBlurDuration > 10 ? 'text-flag-amber' : 'text-flag-green'">
-                {{ analysis?.blurIntervals?.length || 0 }}회 ({{ formatDuration(analysis?.totalBlurDuration || 0) }})
+                {{ analysis?.blurIntervals?.length || 0 }}{{ $t('auto.m_c1f22fef9c8b') }}{{ formatDuration(analysis?.totalBlurDuration || 0) }})
               </strong>
             </div>
             <div class="flex justify-between items-center py-1.5">
-              <span class="text-text-secondary">평균 글쓰기 속도</span>
+              <span class="text-text-secondary">{{ $t('auto.m_ba2dfc94fbfe') }}</span>
               <strong class="text-text-primary">{{ analysis?.sessionSummary?.averageWPM || 0 }} WPM</strong>
             </div>
           </div>

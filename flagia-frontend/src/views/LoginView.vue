@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const { login, register: doRegister, isLoggedIn } = useAuth()
 
 // Determine mode from route
@@ -65,29 +67,17 @@ function toggleMode() {
 
         <!-- Main Copy -->
         <div class="my-auto max-w-lg">
-          <h1 class="text-4xl font-extrabold leading-tight mb-6">
-            과정 중심<br/>
-            정직한 글쓰기<br/>
-            증명 플랫폼
-          </h1>
-          <p class="text-lg text-white/70 leading-relaxed mb-8">
-            키스트로크 다이나믹스 분석을 통해 학생의 글쓰기 과정을 투명하게 검증합니다. AI 시대에 진정한 학술 무결성을 지키세요.
-          </p>
+          <h1 class="text-4xl font-extrabold leading-tight mb-6"> {{ $t('auto.m_4c0f6d62090a') }}<br/> {{ $t('auto.m_01739529c62a') }}<br/> {{ $t('auto.m_c3bb0cd37224') }} </h1>
+          <p class="text-lg text-white/70 leading-relaxed mb-8"> {{ $t('auto.m_64e58a2a4da6') }} </p>
 
           <!-- Feature badges -->
           <div class="flex flex-wrap gap-3">
             <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              실시간 텔레메트리
-            </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> {{ $t('auto.m_adcc61c0d9e6') }} </div>
             <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-              마크다운 에디터
-            </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> {{ $t('auto.m_4a7ed5ecbf25') }} </div>
             <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              행동 분석 엔진
-            </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> {{ $t('auto.m_49f29f38536e') }} </div>
           </div>
         </div>
 
@@ -114,49 +104,45 @@ function toggleMode() {
               @click="isLogin = true; error = ''"
               class="flex-1 py-2 text-sm font-medium rounded-md transition-all"
               :class="isLogin ? 'bg-white shadow-sm text-text-primary' : 'text-text-secondary'"
-            >로그인</button>
+            >{{ $t('auto.m_e225a6fd754f') }}</button>
             <button
               @click="isLogin = false; error = ''"
               class="flex-1 py-2 text-sm font-medium rounded-md transition-all"
               :class="!isLogin ? 'bg-white shadow-sm text-text-primary' : 'text-text-secondary'"
-            >회원가입</button>
+            >{{ $t('auto.m_ecb4cc8789ec') }}</button>
           </div>
 
           <form @submit.prevent="submit" class="flex flex-col gap-4">
             <!-- Name (register only) -->
             <div v-if="!isLogin">
-              <label class="label">이름</label>
-              <input v-model="name" type="text" class="input" placeholder="홍길동" required />
+              <label class="label">{{ $t('auto.m_9aa18e507125') }}</label>
+              <input v-model="name" type="text" class="input" :placeholder="$t('auto.m_8413234fa280')" required />
             </div>
 
             <div>
-              <label class="label">이메일</label>
+              <label class="label">{{ $t('auto.m_3c37764a2b97') }}</label>
               <input v-model="email" type="email" class="input" placeholder="email@school.edu" required />
             </div>
 
             <div>
-              <label class="label">비밀번호</label>
+              <label class="label">{{ $t('auto.m_81973897c757') }}</label>
               <input v-model="password" type="password" class="input" placeholder="••••••••" required minlength="4" />
             </div>
 
             <!-- Role (register only) -->
             <div v-if="!isLogin">
-              <label class="label">역할</label>
+              <label class="label">{{ $t('auto.m_f3f4087e969a') }}</label>
               <div class="grid grid-cols-2 gap-2">
                 <button type="button"
                   @click="role = 'STUDENT'"
                   class="mode-option text-center text-sm"
                   :class="{ selected: role === 'STUDENT' }">
-                  <div class="text-lg mb-0.5">🎓</div>
-                  학생
-                </button>
+                  <div class="text-lg mb-0.5">🎓</div> {{ $t('auto.m_d8f324428d3c') }} </button>
                 <button type="button"
                   @click="role = 'TEACHER'"
                   class="mode-option text-center text-sm"
                   :class="{ selected: role === 'TEACHER' }">
-                  <div class="text-lg mb-0.5">📋</div>
-                  교사
-                </button>
+                  <div class="text-lg mb-0.5">📋</div> {{ $t('auto.m_b9649a5e65bb') }} </button>
               </div>
             </div>
 
@@ -167,14 +153,14 @@ function toggleMode() {
 
             <button type="submit" class="btn btn-primary w-full py-3 mt-1" :disabled="loading">
               <svg v-if="loading" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              {{ isLogin ? '로그인' : '가입하기' }}
+              {{ isLogin ? t('runtime.m_e225a6fd754f') : t('runtime.m_1314de2e1225') }}
             </button>
           </form>
 
           <p class="text-center text-sm text-text-secondary mt-5">
-            {{ isLogin ? '계정이 없으신가요?' : '이미 계정이 있으신가요?' }}
+            {{ isLogin ? t('runtime.m_68a92d28b6de') : t('runtime.m_9922a0bff846') }}
             <button @click="toggleMode" class="text-primary font-medium ml-1 hover:underline">
-              {{ isLogin ? '회원가입' : '로그인' }}
+              {{ isLogin ? t('runtime.m_ecb4cc8789ec') : t('runtime.m_e225a6fd754f') }}
             </button>
           </p>
         </div>

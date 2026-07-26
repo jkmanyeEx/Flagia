@@ -16,8 +16,8 @@ const router = useRouter()
           <span>Flagia</span>
         </div>
         <div class="landing-nav-actions">
-          <button @click="router.push('/login')" class="btn btn-ghost btn-sm">로그인</button>
-          <button @click="router.push('/register')" class="btn btn-primary btn-sm">무료로 시작</button>
+          <button @click="router.push('/login')" class="btn btn-ghost btn-sm">{{ $t('auto.m_e225a6fd754f') }}</button>
+          <button @click="router.push('/register')" class="btn btn-primary btn-sm">{{ $t('auto.m_22a4bea87413') }}</button>
         </div>
       </div>
     </nav>
@@ -31,28 +31,16 @@ const router = useRouter()
       </div>
       <div class="landing-hero-content">
         <div class="landing-hero-badge">
-          <span class="landing-badge-dot"></span>
-          실시간 글쓰기 무결성 검증
-        </div>
-        <h1 class="landing-hero-title">
-          학생이 <span class="gradient-text">직접 쓴 글</span>인지<br/>
-          실시간으로 판별합니다
-        </h1>
-        <p class="landing-hero-desc">
-          Flagia는 키 입력 패턴, 붙여넣기 감지, 세션 분석 등 다층 행동 분석으로<br/>
-          작성물의 진위를 검증하는 교육 전용 글쓰기 플랫폼입니다.
-        </p>
+          <span class="landing-badge-dot"></span> {{ $t('auto.m_8ada951dab90') }} </div>
+        <h1 class="landing-hero-title"> {{ $t('auto.m_cd26dc337a37') }} <span class="gradient-text">{{ $t('auto.m_d49e7d7f85cf') }}</span>{{ $t('auto.m_c6a37dff82fc') }}<br/> {{ $t('auto.m_a99611b905e7') }} </h1>
+        <p class="landing-hero-desc"> {{ $t('auto.m_1dc125550edd') }}<br/> {{ $t('auto.m_25b1b3212118') }} </p>
         <div class="landing-hero-actions">
-          <button @click="router.push('/register')" class="btn btn-primary btn-lg landing-cta">
-            무료로 시작하기
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="router.push('/register')" class="btn btn-primary btn-lg landing-cta"> {{ $t('auto.m_7bbd5bbabfd0') }} <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 12h14"/>
               <path d="m12 5 7 7-7 7"/>
             </svg>
           </button>
-          <button @click="router.push('/login')" class="btn btn-outline btn-lg">
-            이미 계정이 있어요
-          </button>
+          <button @click="router.push('/login')" class="btn btn-outline btn-lg"> {{ $t('auto.m_3edbb5a6b4c3') }} </button>
         </div>
       </div>
     </section>
@@ -60,8 +48,8 @@ const router = useRouter()
     <!-- Features -->
     <section class="landing-features">
       <div class="landing-section-inner">
-        <h2 class="landing-section-title">왜 Flagia인가요?</h2>
-        <p class="landing-section-desc">기존 표절 검사와는 다른 접근. 글이 쓰여지는 과정을 분석합니다.</p>
+        <h2 class="landing-section-title">{{ $t('auto.m_73e54d924cc0') }}</h2>
+        <p class="landing-section-desc">{{ $t('auto.m_49200ed09167') }}</p>
         
         <div class="landing-features-grid">
           <div class="feature-card">
@@ -72,8 +60,8 @@ const router = useRouter()
                 <line x1="12" y1="17" x2="12" y2="21"/>
               </svg>
             </div>
-            <h3>실시간 키스트로크 분석</h3>
-            <p>키 입력 간격(IKI) 변동 계수를 측정하여 자연스러운 타이핑 패턴과 복사-붙여넣기를 구분합니다.</p>
+            <h3>{{ $t('auto.m_5510e0715196') }}</h3>
+            <p>{{ $t('auto.m_8cdf6176b8b4') }}</p>
           </div>
           
           <div class="feature-card">
@@ -83,8 +71,8 @@ const router = useRouter()
                 <path d="M12.02 2C6.21 2 2 6.74 2 12c0 5.26 4.13 10 10 10 5.51 0 10-4.74 10-10 0-5.26-4.49-10-10-10z"/>
               </svg>
             </div>
-            <h3>탭 이탈 감지</h3>
-            <p>학생이 다른 탭으로 이동하거나 외부 소스를 참조하는 행위를 실시간으로 추적합니다.</p>
+            <h3>{{ $t('auto.m_7780fff69b64') }}</h3>
+            <p>{{ $t('auto.m_d6fbcaf7fbd3') }}</p>
           </div>
           
           <div class="feature-card">
@@ -95,8 +83,8 @@ const router = useRouter()
                 <line x1="6" y1="20" x2="6" y2="14"/>
               </svg>
             </div>
-            <h3>종합 무결성 점수</h3>
-            <p>4가지 핵심 지표를 종합한 Flagia Score로 글쓰기 진위를 직관적으로 확인하세요.</p>
+            <h3>{{ $t('auto.m_72997a11be87') }}</h3>
+            <p>{{ $t('auto.m_9cdc5382d812') }}</p>
           </div>
           
           <div class="feature-card">
@@ -108,8 +96,8 @@ const router = useRouter()
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
               </svg>
             </div>
-            <h3>교사-학생 대시보드</h3>
-            <p>교사는 과제를 생성하고 초대 코드를 공유. 학생은 코드를 입력해 참여하는 간편한 구조.</p>
+            <h3>{{ $t('auto.m_9e7f8a70bb20') }}</h3>
+            <p>{{ $t('auto.m_956a9232220d') }}</p>
           </div>
         </div>
       </div>
@@ -118,24 +106,24 @@ const router = useRouter()
     <!-- How it works -->
     <section class="landing-how">
       <div class="landing-section-inner">
-        <h2 class="landing-section-title">어떻게 동작하나요?</h2>
+        <h2 class="landing-section-title">{{ $t('auto.m_9def99b3fc95') }}</h2>
         <div class="landing-steps">
           <div class="step-card">
             <div class="step-number">1</div>
-            <h3>과제 생성</h3>
-            <p>교사가 과제를 만들고 초대 코드를 학생에게 공유합니다.</p>
+            <h3>{{ $t('auto.m_e2801a7e9786') }}</h3>
+            <p>{{ $t('auto.m_b03b08701f46') }}</p>
           </div>
           <div class="step-connector"></div>
           <div class="step-card">
             <div class="step-number">2</div>
-            <h3>글쓰기</h3>
-            <p>학생이 에디터에서 직접 글을 작성하면, 모든 입력 패턴이 기록됩니다.</p>
+            <h3>{{ $t('auto.m_b22f31b43281') }}</h3>
+            <p>{{ $t('auto.m_3475b1efddeb') }}</p>
           </div>
           <div class="step-connector"></div>
           <div class="step-card">
             <div class="step-number">3</div>
-            <h3>분석 리포트</h3>
-            <p>제출 즉시 AI 분석이 실행되어 무결성 점수와 상세 리포트가 생성됩니다.</p>
+            <h3>{{ $t('auto.m_7da98d316224') }}</h3>
+            <p>{{ $t('auto.m_4fb772c693cc') }}</p>
           </div>
         </div>
       </div>
@@ -145,11 +133,9 @@ const router = useRouter()
     <section class="landing-cta-section">
       <div class="landing-section-inner">
         <div class="landing-cta-card glass-dark">
-          <h2>지금 바로 시작하세요</h2>
-          <p>무료로 계정을 만들고 Flagia를 경험해 보세요.</p>
-          <button @click="router.push('/register')" class="btn btn-primary btn-lg landing-cta">
-            무료 계정 만들기
-          </button>
+          <h2>{{ $t('auto.m_262ab7496686') }}</h2>
+          <p>{{ $t('auto.m_74ba912b204b') }}</p>
+          <button @click="router.push('/register')" class="btn btn-primary btn-lg landing-cta"> {{ $t('auto.m_4d79f27bce8a') }} </button>
         </div>
       </div>
     </section>
@@ -179,10 +165,10 @@ const router = useRouter()
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(248, 249, 250, 0.8);
+  background: color-mix(in srgb, var(--color-background) 82%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
 }
 .landing-nav-inner {
   max-width: 1120px;
@@ -368,7 +354,7 @@ const router = useRouter()
   transition: all 0.25s ease;
 }
 .feature-card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 24px hsl(var(--shadow-color) / 0.1);
   transform: translateY(-2px);
 }
 .feature-card h3 {

@@ -40,7 +40,10 @@ function delay(ms) {
 function send(ws, type, payload) {
     if (ws.readyState === ws_1.WebSocket.OPEN) {
         try {
-            ws.send(JSON.stringify({ type, payload }));
+            const localizedPayload = payload.error && !payload.code
+                ? { ...payload, code: type === 'auth_error' ? 'UNAUTHENTICATED' : 'REQUEST_FAILED' }
+                : payload;
+            ws.send(JSON.stringify({ type, payload: localizedPayload }));
         }
         catch {
             // A single socket failing during a broadcast must not affect peers.
@@ -129,7 +132,7 @@ function initWebSocket(server) {
                             ws.send(JSON.stringify({ type: 'auth_ok', payload: { userId: user.userId, role: user.role } }));
                         }
                         catch {
-                            ws.send(JSON.stringify({ type: 'auth_error', payload: { error: '인증 실패' } }));
+                            send(ws, 'auth_error', { code: 'UNAUTHENTICATED', error: '인증 실패' });
                             ws.close();
                         }
                         break;
@@ -137,7 +140,7 @@ function initWebSocket(server) {
                     // ── Student joins a writing session ──
                     case 'join_session': {
                         if (!clientState) {
-                            ws.send(JSON.stringify({ type: 'error', payload: { error: '먼저 인증해 주세요' } }));
+                            send(ws, 'error', { code: 'UNAUTHENTICATED', error: '먼저 인증해 주세요' });
                             break;
                         }
                         const { submissionId, assignmentId } = payload;

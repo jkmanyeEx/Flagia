@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onErrorCaptured, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from './composables/useAuth'
+import { usePreferences, type AppLocale, type AppTheme } from './composables/usePreferences'
 
 const router = useRouter()
 const route = useRoute()
 const { user, isLoggedIn, logout: doLogout } = useAuth()
+const { t } = useI18n()
+const { theme, locale, setTheme, setLocale } = usePreferences()
 
 // ── Layout logic ──
 const publicPages = ['landing', 'login', 'register']
@@ -14,7 +18,6 @@ const isEditorView = computed(() => route.name === 'editor')
 
 // ── Modals and Mobile Sidebar ──
 const isSidebarOpen = ref(false)
-const showGuideModal = ref(false)
 const showSettingsModal = ref(false)
 
 // Close sidebar on route change
@@ -27,7 +30,7 @@ watch(() => route.fullPath, () => {
 const renderError = ref<string | null>(null)
 onErrorCaptured((err) => {
   console.error('Component render error caught:', err)
-  renderError.value = err instanceof Error ? err.message : '렌더링 오류가 발생했습니다'
+  renderError.value = err instanceof Error ? err.message : t('errors.renderFallback')
   return false // prevent propagation
 })
 
@@ -41,7 +44,7 @@ function goHome() {
 }
 
 // Single mutually-exclusive active nav key — avoids multiple items
-// highlighting at once (e.g. 대시보드 + 과제 관리 both lighting up on /teacher).
+// highlighting at once (for example, two navigation destinations on /teacher).
 const activeNav = computed(() => {
   const n = route.name as string
   if (n === 'analysis') return 'analysis'
@@ -55,11 +58,17 @@ const activeNav = computed(() => {
   return ''
 })
 
-const roleLabel = computed(() =>
-  user.value?.role === 'TEACHER' ? '교사 계정'
-    : user.value?.role === 'ADMIN' ? '관리자 계정'
-    : '학생 계정'
-)
+const roleLabel = computed(() => t(
+  user.value?.role === 'TEACHER' ? 'nav.teacherAccount'
+    : user.value?.role === 'ADMIN' ? 'nav.adminAccount'
+      : 'nav.studentAccount',
+))
+
+const roleName = computed(() => t(
+  user.value?.role === 'TEACHER' ? 'common.teacher'
+    : user.value?.role === 'ADMIN' ? 'common.admin'
+      : 'common.student',
+))
 </script>
 
 <template>
@@ -109,33 +118,28 @@ const roleLabel = computed(() =>
         <!-- Classrooms (both roles) -->
         <button @click="router.push('/classrooms')" class="sidebar-nav-item" :class="{ active: activeNav === 'classrooms' }">
           <span class="item-icon">🏫</span>
-          <span class="item-label">학급</span>
+          <span class="item-label">{{ t('nav.classrooms') }}</span>
         </button>
 
         <!-- Teacher / Admin: assignment management -->
         <button v-if="user?.role === 'TEACHER' || user?.role === 'ADMIN'" @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
           <span class="item-icon">📝</span>
-          <span class="item-label">과제 관리</span>
+          <span class="item-label">{{ t('nav.assignmentManagement') }}</span>
         </button>
 
         <!-- Student / Admin: student-side assignment views -->
         <template v-if="user?.role === 'STUDENT' || user?.role === 'ADMIN'">
           <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-all' }">
             <span class="item-icon">📋</span>
-            <span class="item-label">{{ user?.role === 'ADMIN' ? '내 과제 (학생용)' : '과제' }}</span>
+            <span class="item-label">{{ t(user?.role === 'ADMIN' ? 'nav.studentAssignments' : 'nav.assignments') }}</span>
           </button>
         </template>
 
         <div class="sidebar-divider"></div>
 
-        <!-- Help & Settings -->
-        <button @click="showGuideModal = true" class="sidebar-nav-item">
-          <span class="item-icon">📖</span>
-          <span class="item-label">사용 가이드</span>
-        </button>
         <button @click="showSettingsModal = true" class="sidebar-nav-item">
           <span class="item-icon">⚙️</span>
-          <span class="item-label">시스템 설정</span>
+          <span class="item-label">{{ t('nav.settings') }}</span>
         </button>
       </div>
 
@@ -147,21 +151,25 @@ const roleLabel = computed(() =>
             <polyline points="16 17 21 12 16 7"/>
             <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
-          <span>로그아웃</span>
+          <span>{{ t('nav.logout') }}</span>
         </button>
       </div>
     </aside>
 
     <!-- Main Body Area -->
     <div class="app-body-wrapper">
-      
-      <!-- Mobile Top Header -->
-      <header class="mobile-header md:hidden">
-        <div class="mobile-brand" @click="goHome">
-          <img src="/logo.jpg" alt="Flagia" class="mobile-logo-img" />
-          <span class="mobile-logo-text">Flagia</span>
-        </div>
-      </header>
+
+      <button
+        v-if="!isSidebarOpen"
+        class="mobile-menu-trigger md:hidden"
+        type="button"
+        :aria-label="t('nav.openMenu')"
+        @click="isSidebarOpen = true"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+      </button>
 
       <!-- Content Body -->
       <main class="app-content-area">
@@ -175,10 +183,10 @@ const roleLabel = computed(() =>
                 <line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
             </div>
-            <h3 class="text-lg font-semibold text-text-primary mb-2">페이지 로드 오류</h3>
+            <h3 class="text-lg font-semibold text-text-primary mb-2">{{ t('errors.renderTitle') }}</h3>
             <p class="text-sm text-text-secondary mb-4">{{ renderError }}</p>
             <button @click="renderError = null; router.push('/dashboard')" class="btn btn-primary">
-              대시보드로 돌아가기
+              {{ t('common.dashboard') }}
             </button>
           </div>
         </div>
@@ -191,107 +199,73 @@ const roleLabel = computed(() =>
       </main>
     </div>
 
-    <!-- ─── Guide Modal ─── -->
-    <div v-if="showGuideModal" class="modal-overlay" @click.self="showGuideModal = false">
-      <div class="modal-content max-w-xl mx-4 p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-text-primary">📖 Flagia 이용 가이드</h3>
-          <button @click="showGuideModal = false" class="btn btn-ghost btn-xs">✕</button>
-        </div>
-
-        <div class="space-y-4 text-sm text-text-secondary overflow-y-auto max-h-[60vh] pr-2">
-          <section>
-            <h4 class="font-semibold text-text-primary mb-1">🔍 Flagia Score (0–100)</h4>
-            <p class="leading-relaxed">
-              학생이 글을 쓰는 동안 수집된 키 입력 텔레메트리를 분석해 <strong>사람이 직접 작성했을 신뢰도</strong>를 점수화합니다. 아래 5개 지표의 가중 합산으로 산출됩니다.
-            </p>
-          </section>
-
-          <section>
-            <h4 class="font-semibold text-text-primary mb-1">📊 5개 분석 지표</h4>
-            <ul class="list-disc pl-5 space-y-1">
-              <li><strong>⌨️ 타이핑 리듬</strong>: 키 입력 간격의 변동 계수(Cv). 기계처럼 일정하거나 붙여넣기로 표본이 부족하면 낮아집니다.</li>
-              <li><strong>✏️ 수정 강도</strong>: 키 입력 수 대비 최종 글자 수 비율. 수정 흔적이 거의 없으면 사전 작성·복사를 의심합니다.</li>
-              <li><strong>📋 외부 콘텐츠</strong>: 붙여넣기 횟수와 분량. 외부에서 가져온 비중이 클수록 낮아집니다.</li>
-              <li><strong>👁️ 집중도</strong>: 작성 중 에디터 이탈(blur) 누적 시간.</li>
-              <li><strong>⏱️ 작성 시간</strong>: 분량 대비 작성 속도(분당 글자 수). 사람이 타이핑하기엔 너무 빠르면 낮아집니다.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h4 class="font-semibold text-text-primary mb-1">🛡 분석 모드 (지표 가중치 조절)</h4>
-            <ul class="list-disc pl-5 space-y-1">
-              <li><strong>STRICT (시험)</strong>: 타이핑 리듬을 가장 엄격하게 평가합니다. (GREEN ≥ 75)</li>
-              <li><strong>STANDARD (일반 과제)</strong>: 균형 잡힌 기본 권장 모드입니다. (GREEN ≥ 70)</li>
-              <li><strong>RESEARCH (조사)</strong>: 외부 참고를 허용하되 붙여넣기 비중을 중점 평가합니다. (GREEN ≥ 60)</li>
-              <li><strong>CREATIVE (창작)</strong>: 리듬 기준을 완화하고 수정 활동을 폭넓게 인정합니다. (GREEN ≥ 55)</li>
-            </ul>
-          </section>
-
-          <section>
-            <h4 class="font-semibold text-text-primary mb-1">🚦 플래그 판정</h4>
-            <p class="leading-relaxed">
-              🟢 <strong>안전</strong> · 🟡 <strong>주의</strong> · 🔴 <strong>위험</strong>. 🟡 이상은 부정행위 단정이 아닌 <strong>추가 확인 권장</strong> 신호입니다.
-            </p>
-          </section>
-
-          <section>
-            <h4 class="font-semibold text-text-primary mb-1">🎥 작성 리플레이 & 채점</h4>
-            <p class="leading-relaxed">
-              교사는 분석 리포트에서 학생의 키 입력 과정을 재생(리플레이)하며 작성 흐름을 검토하고, 본문 화면에서 점수와 피드백을 입력할 수 있습니다.
-            </p>
-          </section>
-        </div>
-        
-        <div class="mt-6 flex justify-end">
-          <button @click="showGuideModal = false" class="btn btn-primary">확인</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ─── Settings Modal ─── -->
     <div v-if="showSettingsModal" class="modal-overlay" @click.self="showSettingsModal = false">
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-bold text-text-primary">⚙️ 시스템 설정</h3>
+          <h3 class="text-lg font-bold text-text-primary">{{ t('settings.title') }}</h3>
           <button @click="showSettingsModal = false" class="btn btn-ghost btn-xs">✕</button>
         </div>
 
         <div class="space-y-5 text-sm text-text-secondary">
           <!-- Account info (real data) -->
           <section>
-            <h4 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">계정 정보</h4>
+            <h4 class="settings-section-label">{{ t('settings.account') }}</h4>
             <div class="bg-background rounded-lg p-3 space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-text-muted">이름</span>
+                <span class="text-text-muted">{{ t('common.name') }}</span>
                 <span class="font-semibold text-text-primary">{{ user?.name }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-text-muted">이메일</span>
+                <span class="text-text-muted">{{ t('common.email') }}</span>
                 <span class="font-mono text-text-primary">{{ user?.email }}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-text-muted">역할</span>
+                <span class="text-text-muted">{{ t('common.role') }}</span>
                 <span class="badge" :class="user?.role === 'STUDENT' ? 'badge-amber' : 'badge-green'">
-                  {{ user?.role === 'TEACHER' ? '교사' : user?.role === 'ADMIN' ? '관리자' : '학생' }}
+                  {{ roleName }}
                 </span>
               </div>
             </div>
           </section>
 
-          <!-- Security info (real, from README/backend) -->
           <section>
-            <h4 class="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">보안 & 무결성</h4>
-            <ul class="bg-background rounded-lg p-3 space-y-1.5 text-xs">
-              <li class="flex items-center gap-2"><span>🔒</span> 전송 구간 HTTPS / TLS 1.3</li>
-              <li class="flex items-center gap-2"><span>🔑</span> JWT 세션 (24시간 만료)</li>
-              <li class="flex items-center gap-2"><span>🧩</span> 텔레메트리 SHA-256 해시 체이닝 (변조 탐지)</li>
-            </ul>
+            <h4 class="settings-section-label">{{ t('settings.preferences') }}</h4>
+            <div class="settings-preferences">
+              <div class="settings-row">
+                <span class="settings-row-label">{{ t('settings.theme') }}</span>
+                <div class="settings-segment" role="group" :aria-label="t('settings.theme')">
+                  <button
+                    v-for="option in (['light', 'dark'] as AppTheme[])"
+                    :key="option"
+                    type="button"
+                    :class="{ active: theme === option }"
+                    @click="setTheme(option)"
+                  >
+                    {{ t(`settings.${option}`) }}
+                  </button>
+                </div>
+              </div>
+              <div class="settings-row">
+                <span class="settings-row-label">{{ t('settings.language') }}</span>
+                <div class="settings-segment" role="group" :aria-label="t('settings.language')">
+                  <button
+                    v-for="option in (['ko', 'en'] as AppLocale[])"
+                    :key="option"
+                    type="button"
+                    :class="{ active: locale === option }"
+                    @click="setLocale(option)"
+                  >
+                    {{ t(option === 'ko' ? 'settings.korean' : 'settings.english') }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
 
         <div class="mt-6 flex justify-end">
-          <button @click="showSettingsModal = false" class="btn btn-primary">닫기</button>
+          <button @click="showSettingsModal = false" class="btn btn-primary">{{ t('common.close') }}</button>
         </div>
       </div>
     </div>

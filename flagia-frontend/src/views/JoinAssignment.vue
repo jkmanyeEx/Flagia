@@ -5,11 +5,13 @@
  */
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const { user, token, isLoggedIn } = useAuth()
 
 const status = ref<'loading' | 'error' | 'success'>('loading')
@@ -20,7 +22,7 @@ onMounted(async () => {
 
   const code = route.params.code as string
   if (!code) {
-    errorMsg.value = '유효하지 않은 코드입니다'
+    errorMsg.value = t('runtime.m_936e6395c842')
     status.value = 'error'
     return
   }
@@ -34,7 +36,7 @@ onMounted(async () => {
     // Redirect to editor
     router.replace(`/editor/${data.assignmentId}`)
   } catch (err: any) {
-    errorMsg.value = err.message || '과제 참여에 실패했습니다'
+    errorMsg.value = err.message || t('runtime.m_ec4efd661fab')
     status.value = 'error'
   }
 })
@@ -50,7 +52,7 @@ onMounted(async () => {
           <line x1="15" y1="12" x2="3" y2="12"/>
         </svg>
       </div>
-      <p class="text-text-secondary">과제에 참여하는 중...</p>
+      <p class="text-text-secondary">{{ $t('auto.m_dc832aa787c9') }}</p>
     </div>
 
     <div v-else-if="status === 'error'" class="text-center max-w-sm">
@@ -61,9 +63,9 @@ onMounted(async () => {
           <line x1="9" y1="9" x2="15" y2="15"/>
         </svg>
       </div>
-      <p class="text-text-primary font-semibold mb-2">참여 실패</p>
+      <p class="text-text-primary font-semibold mb-2">{{ $t('auto.m_574bd71a8c49') }}</p>
       <p class="text-text-secondary text-sm mb-6">{{ errorMsg }}</p>
-      <button @click="router.push('/dashboard')" class="btn btn-primary">대시보드로 돌아가기</button>
+      <button @click="router.push('/dashboard')" class="btn btn-primary">{{ $t('auto.m_4c0f6d2b714f') }}</button>
     </div>
   </div>
 </template>

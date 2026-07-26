@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
 import RichTextEditor from '../components/RichTextEditor.vue'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
+import { translateError } from '../i18n'
 
 const API = resolveApiBase()
 const WS_URL = resolveWsUrl()
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const { user, token } = useAuth()
 
 // State
@@ -33,10 +36,10 @@ const sessionConnected = computed(() => wsConnected.value && !!sessionId.value)
 const connectionLocked = computed(() => !sessionConnected.value && !submitted.value)
 const writingLocked = computed(() => isLocked.value || connectionLocked.value)
 const connectionLabel = computed(() => {
-  if (sessionConnected.value) return '연결됨'
-  if (sessionError.value) return '세션 연결 실패'
-  if (wsConnected.value) return '세션 연결 중'
-  return '연결 중'
+  if (sessionConnected.value) return t('runtime.m_ca3372f3bce7')
+  if (sessionError.value) return t('runtime.m_6cb49d905c2f')
+  if (wsConnected.value) return t('runtime.m_b46a95235cdd')
+  return t('runtime.m_1ed5386f9375')
 })
 
 // Timer
@@ -340,7 +343,7 @@ function connectWS() {
         pauseActiveTimer()
         sessionId.value = ''
         liveSessionReady = false
-        sessionError.value = msg.payload?.error || '작성 세션에 연결할 수 없습니다'
+        sessionError.value = translateError(msg.payload?.code, msg.payload?.error || t('runtime.m_0de29a6380d2'))
       } else if (msg.type === 'force_close' || msg.type === 'submit_required') {
         handleSessionEnd(msg.type === 'force_close' ? 'teacher' : 'timer')
       }
@@ -558,11 +561,11 @@ async function submitEssay(forceClose = false, reason: 'teacher' | 'timer' | 'no
       ws?.close()
     } else {
       const error = await res.json().catch(() => ({}))
-      throw new Error(error.error || '제출에 실패했습니다')
+      throw new Error(translateError(error.code, error.error || t('runtime.m_b3dbbd686702')))
     }
   } catch (err) {
     console.error('Submit error:', err)
-    submitError.value = err instanceof Error ? err.message : '제출 처리 중 오류가 발생했습니다'
+    submitError.value = err instanceof Error ? err.message : t('runtime.m_418c8db0d8cc')
     // A teacher/timer-closed editor must remain locked while the server fallback
     // runs. Re-read the existing submission shortly afterwards so a transient
     // HTTP disconnect still reaches the correct completion screen.
@@ -739,7 +742,7 @@ async function confirmSubmit() {
   <div v-if="loading" class="min-h-screen flex items-center justify-center bg-background">
     <div class="flex flex-col items-center gap-3">
       <div class="w-10 h-10 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
-      <span class="text-sm text-text-secondary">에디터를 불러오는 중...</span>
+      <span class="text-sm text-text-secondary">{{ $t('auto.m_1cb4a6465eee') }}</span>
     </div>
   </div>
 
@@ -749,32 +752,23 @@ async function confirmSubmit() {
       <div class="text-5xl mb-4">{{ submitOutcome === 'teacher' ? '🔒' : '✅' }}</div>
       <h2 class="text-xl font-bold text-text-primary mb-2">
         {{ submitOutcome === 'teacher'
-          ? '강제 종료되어 자동 제출되었습니다'
+          ? t('runtime.m_a131d48b814c')
           : submitOutcome === 'timer'
-            ? '시간이 만료되어 자동 제출되었습니다'
+            ? t('runtime.m_e2a16c92e6de')
             : submitOutcome === 'forced-unknown'
-              ? '자동 제출되었습니다'
-              : '제출 완료' }}
+              ? t('runtime.m_261ef250bedf')
+              : t('runtime.m_2349d1875e73') }}
       </h2>
       <p class="text-sm text-text-secondary mb-2">
-        <template v-if="submitOutcome === 'teacher'">
-          교사에 의해 작성이 종료되었습니다. <strong>{{ assignment?.title }}</strong>의 최신 내용이 안전하게 제출되었습니다.
-        </template>
+        <template v-if="submitOutcome === 'teacher'"> {{ $t('auto.m_b3a957fa89d2') }} <strong>{{ assignment?.title }}</strong>{{ $t('auto.m_a0663185c0e2') }} </template>
         <template v-else>
-          <strong>{{ assignment?.title }}</strong>에 대한 글이 성공적으로 제출되었습니다.
-        </template>
+          <strong>{{ assignment?.title }}</strong>{{ $t('auto.m_686b2f212a93') }} </template>
       </p>
-      <p class="text-xs text-text-muted mb-6">
-        Flagia 분석 엔진이 작성 과정을 분석하고 있습니다.
-      </p>
+      <p class="text-xs text-text-muted mb-6"> {{ $t('auto.m_cc2e2c910fdb') }} </p>
       
       <div class="flex flex-col gap-2">
-        <button v-if="submission?.id" @click="router.push(`/analysis/${submission.id}`)" class="btn btn-primary w-full">
-          분석 결과 보기
-        </button>
-        <button @click="router.push('/student')" class="btn btn-outline w-full">
-          과제 목록으로
-        </button>
+        <button v-if="submission?.id" @click="router.push(`/analysis/${submission.id}`)" class="btn btn-primary w-full"> {{ $t('auto.m_44a8595b84f9') }} </button>
+        <button @click="router.push('/student')" class="btn btn-outline w-full"> {{ $t('auto.m_78be9906a940') }} </button>
       </div>
     </div>
   </div>
@@ -784,9 +778,7 @@ async function confirmSubmit() {
     <!-- Top Bar -->
     <div class="flex items-center justify-between px-4 py-2.5 bg-white border-b border-border">
       <div class="flex items-center gap-3">
-        <button @click="router.push('/student')" class="btn btn-ghost btn-xs">
-          ← 뒤로
-        </button>
+        <button @click="router.push('/student')" class="btn btn-ghost btn-xs"> {{ $t('auto.m_f787eb535042') }} </button>
         <div class="w-px h-5 bg-border"></div>
         <h2 class="text-sm font-semibold text-text-primary truncate max-w-xs">
           {{ assignment?.title }}
@@ -804,7 +796,7 @@ async function confirmSubmit() {
         <div
           class="timer flex items-center gap-1.5 transition-opacity"
           :class="{ 'timer-danger': timerDanger && sessionConnected, 'opacity-45': !sessionConnected }"
-          :title="sessionConnected ? '작성 시간이 진행 중입니다' : '세션 연결 후 타이머가 시작됩니다'"
+          :title="t(sessionConnected ? 'editor.timerRunning' : 'editor.timerWaiting')"
         >
           <svg v-if="!sessionConnected" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="5" y="11" width="14" height="10" rx="2"/>
@@ -816,7 +808,7 @@ async function confirmSubmit() {
         <!-- Submit -->
         <button @click="showSubmitModal = true" class="btn btn-primary btn-sm" :disabled="writingLocked || submitting || wordCount === 0">
           <svg v-if="submitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          {{ submitting ? '제출 중...' : isLocked ? '작성 종료됨' : connectionLocked ? '연결 대기 중' : '제출하기' }}
+          {{ submitting ? t('runtime.m_d6f9987955b9') : isLocked ? t('runtime.m_cad3f5c528a1') : connectionLocked ? t('runtime.m_672ba86427da') : t('runtime.m_749c9ebfc28d') }}
         </button>
       </div>
     </div>
@@ -837,7 +829,7 @@ async function confirmSubmit() {
                white editor; no header so its top aligns with the editor's. -->
           <div v-if="hasTemplate" class="flex flex-col min-h-0 shrink-0 h-44 lg:h-full lg:w-1/2">
             <div class="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg p-5"
-                 style="box-shadow: 0 4px 20px rgba(0,0,0,0.05); background: #f3f4f6;">
+                 style="box-shadow: 0 4px 20px hsl(var(--shadow-color) / 0.1); background: var(--color-background);">
               <div class="markdown-body ProseMirror" v-html="assignment?.template_text"></div>
             </div>
           </div>
@@ -848,7 +840,7 @@ async function confirmSubmit() {
               <RichTextEditor
                 v-model="content"
                 :disabled="writingLocked"
-                placeholder="여기에 글을 작성하세요..."
+                :placeholder="$t('auto.m_f6a0278341e1')"
                 @keydown="(e, selection) => handleKeydown(e, selection)"
                 @paste="(e, selection) => handlePaste(e, selection)"
               />
@@ -857,17 +849,15 @@ async function confirmSubmit() {
             <!-- Text stats & limit warning -->
             <div class="mt-3 flex items-center justify-between">
               <div class="flex items-center gap-3 text-xs text-text-muted">
-                <span>{{ wordCount.toLocaleString() }}자</span>
+                <span>{{ wordCount.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
                 <span v-if="assignment?.text_limit" :class="wordCount > assignment.text_limit ? 'text-danger font-semibold' : ''">
                   / {{ assignment.text_limit.toLocaleString() }}
                 </span>
                 <span>·</span>
-                <span>{{ readingTime }}분 읽기</span>
+                <span>{{ readingTime }}{{ $t('auto.m_ed846152e8ff') }}</span>
               </div>
               <div v-if="assignment?.text_limit && wordCount > assignment.text_limit" class="text-xs text-danger font-medium flex items-center gap-1">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                제한 {{ (wordCount - assignment.text_limit).toLocaleString() }}자 초과
-              </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> {{ $t('auto.m_b82048b12b08') }} {{ (wordCount - assignment.text_limit).toLocaleString() }}{{ $t('auto.m_9a0b84ce0169') }} </div>
             </div>
           </div>
         </div>
@@ -886,12 +876,12 @@ async function confirmSubmit() {
               </svg>
             </div>
             <h3 class="text-sm font-bold text-text-primary">
-              {{ sessionError ? '작성 세션에 연결할 수 없습니다' : '안전한 작성 세션에 연결 중입니다' }}
+              {{ sessionError ? t('runtime.m_0de29a6380d2') : t('runtime.m_18ea7117197f') }}
             </h3>
             <p class="mt-1.5 text-xs leading-relaxed text-text-secondary">
-              {{ sessionError || '연결이 확인되면 타이머와 작성 화면이 자동으로 활성화됩니다.' }}
+              {{ sessionError || t('runtime.m_324f13cf470a') }}
             </p>
-            <p class="mt-3 text-[11px] font-medium text-text-muted">연결되지 않은 시간은 작성 시간에 포함되지 않습니다.</p>
+            <p class="mt-3 text-[11px] font-medium text-text-muted">{{ $t('auto.m_4c43e594b195') }}</p>
           </div>
         </div>
       </div>
@@ -901,13 +891,13 @@ async function confirmSubmit() {
     <div v-if="showSubmitModal" class="modal-overlay" @click.self="!submitting && (showSubmitModal = false)">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
         <div class="text-4xl mb-4">📝</div>
-        <h3 class="text-lg font-bold mb-2">글 제출하기</h3>
-        <p class="text-sm text-text-secondary mb-6">글을 제출하시겠습니까?<br>제출 후에는 더 이상 수정할 수 없습니다.</p>
+        <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_eb197cfc5a20') }}</h3>
+        <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_c1967cfbdd3f') }}<br>{{ $t('auto.m_ff5cd16cc754') }}</p>
         <div class="flex gap-2">
-          <button @click="showSubmitModal = false" class="btn btn-outline flex-1" :disabled="submitting">취소</button>
+          <button @click="showSubmitModal = false" class="btn btn-outline flex-1" :disabled="submitting">{{ $t('auto.m_19b2d19bc141') }}</button>
           <button @click="confirmSubmit" class="btn btn-primary flex-1" :disabled="submitting">
             <svg v-if="submitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            {{ submitting ? '제출 중...' : '제출' }}
+            {{ submitting ? t('runtime.m_d6f9987955b9') : t('runtime.m_75e18976ecbb') }}
           </button>
         </div>
       </div>

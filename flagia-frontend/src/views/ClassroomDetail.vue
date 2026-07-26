@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth'
 import { api } from '../composables/useApi'
 import RichTextEditor from '../components/RichTextEditor.vue'
@@ -8,6 +9,7 @@ import { resolveWsUrl } from '../composables/apiHost'
 
 const route = useRoute()
 const router = useRouter()
+const { t, locale } = useI18n()
 const { isAdmin, token } = useAuth()
 
 const loading = ref(true)
@@ -45,7 +47,7 @@ async function load() {
     viewMode.value = data.viewMode || 'VIEWER'
     relation.value = data.relation || 'NONE'
   } catch (e: any) {
-    error.value = e.message || '학급 정보를 불러올 수 없습니다'
+    error.value = e.message || t('runtime.m_11f1cffa3c81')
   } finally {
     loading.value = false
   }
@@ -110,10 +112,10 @@ onUnmounted(() => {
 
 function formatDate(d: string) {
   if (!d) return '-'
-  return new Date(d).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(d).toLocaleString(locale.value === 'ko' ? 'ko-KR' : 'en-US', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function getModeLabel(mode: string) {
-  return { STRICT: '엄격', STANDARD: '표준', RESEARCH: '연구', CREATIVE: '자유' }[mode] || mode
+  return { STRICT: t('runtime.m_cb092501bb93'), STANDARD: t('runtime.m_989b51aff08d'), RESEARCH: t('runtime.m_02e00a021a7f'), CREATIVE: t('runtime.m_6285a6f51651') }[mode] || mode
 }
 
 function copyCode() {
@@ -135,7 +137,7 @@ async function createAssignment() {
     form.value = { title: '', dueDate: '', timeLimit: 60, textLimit: 3000, maxScore: 100, templateText: '', mode: 'STANDARD' }
     await load()
   } catch (e: any) {
-    alert(e.message || '과제 생성 중 오류가 발생했습니다')
+    alert(e.message || t('runtime.m_64a3b112c6c8'))
   } finally {
     creating.value = false
   }
@@ -147,7 +149,7 @@ async function deleteClassroom() {
     await api(`/api/classrooms/${classroom.value.id}`, { method: 'DELETE', token: token.value! })
     router.push('/classrooms')
   } catch (e: any) {
-    alert(e.message || '삭제에 실패했습니다')
+    alert(e.message || t('runtime.m_6f323cf10e42'))
   } finally {
     deleting.value = false
   }
@@ -173,7 +175,7 @@ function onAssignmentRow(a: any) {
 }
 
 function statusLabel(s: string) {
-  return { IN_PROGRESS: '작성 중', SUBMITTED: '제출 완료', FORCE_CLOSED: '강제 종료' }[s] || '미시작'
+  return { IN_PROGRESS: t('runtime.m_5d31848228b8'), SUBMITTED: t('runtime.m_2349d1875e73'), FORCE_CLOSED: t('runtime.m_853da12c7c36') }[s] || t('runtime.m_a12d033696c3')
 }
 </script>
 
@@ -183,10 +185,10 @@ function statusLabel(s: string) {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
       </svg>
-      <span>학급 목록</span>
+      <span>{{ $t('auto.m_88db09a92e1e') }}</span>
     </button>
 
-    <div v-if="loading" class="text-center py-16 text-text-muted">로딩 중...</div>
+    <div v-if="loading" class="text-center py-16 text-text-muted">{{ $t('auto.m_06e61b86cbda') }}</div>
 
     <div v-else-if="error" class="card p-8 text-center">
       <div class="text-3xl mb-3">❌</div>
@@ -204,16 +206,16 @@ function statusLabel(s: string) {
             <p v-if="classroom.description" class="text-sm text-text-secondary mb-3">{{ classroom.description }}</p>
             <div class="flex items-center gap-4 text-xs text-text-muted">
               <span>👤 {{ classroom.teacher_name }}</span>
-              <span v-if="isOwner">👥 학생 {{ members.length }}명</span>
-              <span>📝 과제 {{ assignments.length }}개</span>
-              <span v-if="adminUnaffiliated" class="badge text-xs bg-background text-text-muted">관리자 권한 · 미소유·미참여</span>
-              <span v-else-if="relation === 'MEMBER'" class="badge badge-amber text-xs">참여 중</span>
+              <span v-if="isOwner">{{ $t('auto.m_ac70e60b574b') }} {{ members.length }}{{ $t('auto.m_5a62fd50d243') }}</span>
+              <span>{{ $t('auto.m_29d76704e171') }} {{ assignments.length }}{{ $t('auto.m_11600c9ada77') }}</span>
+              <span v-if="adminUnaffiliated" class="badge text-xs bg-background text-text-muted">{{ $t('auto.m_133e87491f20') }}</span>
+              <span v-else-if="relation === 'MEMBER'" class="badge badge-amber text-xs">{{ $t('auto.m_5df8dd738eb1') }}</span>
             </div>
           </div>
 
           <!-- Join code panel -->
           <div class="flex-shrink-0 text-right">
-            <div class="text-xs text-text-muted mb-1">참여 코드</div>
+            <div class="text-xs text-text-muted mb-1">{{ $t('auto.m_37cac543c064') }}</div>
             <div
               @click="copyCode"
               class="bg-primary-light text-primary px-3 py-2 rounded-lg flex items-center gap-2 cursor-pointer border border-primary/20 hover:bg-primary hover:text-white transition-colors"
@@ -226,30 +228,30 @@ function statusLabel(s: string) {
 
         <!-- Owner controls -->
         <div v-if="isOwner" class="flex items-center gap-3 mt-5 pt-4 border-t border-border">
-          <button @click="showCreateModal = true" class="btn btn-primary btn-sm">+ 새 과제</button>
-          <button @click="showDeleteModal = true" class="btn btn-ghost btn-sm text-danger ml-auto">학급 삭제</button>
+          <button @click="showCreateModal = true" class="btn btn-primary btn-sm">{{ $t('auto.m_1e3d29361df3') }}</button>
+          <button @click="showDeleteModal = true" class="btn btn-ghost btn-sm text-danger ml-auto">{{ $t('auto.m_65ac7d8f5a04') }}</button>
         </div>
       </div>
 
       <!-- Assignments -->
       <div class="card overflow-hidden mb-6">
         <div class="p-4 border-b border-border bg-background/50">
-          <h3 class="font-semibold text-text-primary">과제</h3>
+          <h3 class="font-semibold text-text-primary">{{ $t('auto.m_001a89099a51') }}</h3>
         </div>
         <table class="data-table">
           <thead>
             <tr>
-              <th>제목</th>
-              <th>마감일</th>
-              <th>모드</th>
-              <th v-if="isParticipant">상태</th>
-              <th v-else>제출</th>
-              <th class="text-right">{{ isParticipant ? '' : '관리' }}</th>
+              <th>{{ $t('auto.m_078b3a1b0a3d') }}</th>
+              <th>{{ $t('auto.m_7484df028355') }}</th>
+              <th>{{ $t('auto.m_cd1abb7116a5') }}</th>
+              <th v-if="isParticipant">{{ $t('auto.m_2926977ba7c9') }}</th>
+              <th v-else>{{ $t('auto.m_75e18976ecbb') }}</th>
+              <th class="text-right">{{ isParticipant ? '' : t('runtime.m_c29fba5a7caf') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="assignments.length === 0">
-              <td :colspan="5" class="text-center py-10 text-text-muted">아직 과제가 없습니다.</td>
+              <td :colspan="5" class="text-center py-10 text-text-muted">{{ $t('auto.m_58b0a29d14d5') }}</td>
             </tr>
             <tr
               v-else
@@ -269,16 +271,16 @@ function statusLabel(s: string) {
                   'badge-red': a.my_status === 'FORCE_CLOSED',
                 }">{{ statusLabel(a.my_status) }}</span>
               </td>
-              <td v-else class="text-text-secondary text-sm">{{ a.submission_count ?? 0 }}명</td>
+              <td v-else class="text-text-secondary text-sm">{{ a.submission_count ?? 0 }}{{ $t('auto.m_5a62fd50d243') }}</td>
               <td class="text-right">
                 <button
                   v-if="isParticipant"
                   @click.stop="openAssignment(a)"
                   class="btn btn-primary btn-xs"
                 >
-                  {{ a.my_status === 'SUBMITTED' || a.my_status === 'FORCE_CLOSED' ? '분석 보기' : (a.my_status === 'IN_PROGRESS' ? '이어 쓰기' : '시작하기') }}
+                  {{ a.my_status === 'SUBMITTED' || a.my_status === 'FORCE_CLOSED' ? t('runtime.m_ebb7053a8f08') : (a.my_status === 'IN_PROGRESS' ? t('runtime.m_7edf22bef17b') : t('runtime.m_389b82de7bd6')) }}
                 </button>
-                <span v-else-if="isViewer" class="text-xs text-text-muted">보기 전용</span>
+                <span v-else-if="isViewer" class="text-xs text-text-muted">{{ $t('auto.m_005c11b79a43') }}</span>
               </td>
             </tr>
           </tbody>
@@ -288,15 +290,15 @@ function statusLabel(s: string) {
       <!-- Members (owner only) -->
       <div v-if="isOwner" class="card overflow-hidden">
         <div class="p-4 border-b border-border bg-background/50">
-          <h3 class="font-semibold text-text-primary">학생 명단 ({{ members.length }})</h3>
+          <h3 class="font-semibold text-text-primary">{{ $t('auto.m_29d8f0b63022') }}{{ members.length }})</h3>
         </div>
         <table class="data-table">
           <thead>
-            <tr><th>이름</th><th>이메일</th><th>참여일</th></tr>
+            <tr><th>{{ $t('auto.m_9aa18e507125') }}</th><th>{{ $t('auto.m_3c37764a2b97') }}</th><th>{{ $t('auto.m_48fcd1d84c43') }}</th></tr>
           </thead>
           <tbody>
             <tr v-if="members.length === 0">
-              <td colspan="3" class="text-center py-10 text-text-muted">아직 참여한 학생이 없습니다. 참여 코드를 공유하세요.</td>
+              <td colspan="3" class="text-center py-10 text-text-muted">{{ $t('auto.m_9fa37c764d5f') }}</td>
             </tr>
             <tr v-else v-for="m in members" :key="m.id">
               <td class="font-medium text-text-primary">{{ m.name }}</td>
@@ -312,71 +314,71 @@ function statusLabel(s: string) {
     <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
         <div class="flex items-center justify-between mb-5 flex-shrink-0">
-          <h3 class="text-xl font-bold">새 과제 만들기 · {{ classroom?.name }}</h3>
+          <h3 class="text-xl font-bold">{{ $t('auto.m_8ba30178139a') }} {{ classroom?.name }}</h3>
           <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
         </div>
 
         <form @submit.prevent="createAssignment" class="flex flex-col gap-5 flex-1">
           <div>
-            <label class="label">과제 제목</label>
-            <input v-model="form.title" class="input" placeholder="예: 인공지능의 윤리적 과제" required />
+            <label class="label">{{ $t('auto.m_16b94a5fa45e') }}</label>
+            <input v-model="form.title" class="input" :placeholder="$t('auto.m_725b776cbbc1')" required />
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="label">마감일</label>
+              <label class="label">{{ $t('auto.m_7484df028355') }}</label>
               <input v-model="form.dueDate" type="datetime-local" class="input" required />
             </div>
             <div>
-              <label class="label">제한 시간 (분)</label>
+              <label class="label">{{ $t('auto.m_abda63b055e7') }}</label>
               <input v-model.number="form.timeLimit" type="number" class="input" min="10" max="300" />
             </div>
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="label">글자 수 제한</label>
+              <label class="label">{{ $t('auto.m_fd55bbb0e0a3') }}</label>
               <input v-model.number="form.textLimit" type="number" class="input" min="100" max="50000" />
             </div>
             <div>
-              <label class="label">최대 배점</label>
+              <label class="label">{{ $t('auto.m_cc538699d570') }}</label>
               <input v-model.number="form.maxScore" type="number" class="input" min="1" max="1000" placeholder="100" />
             </div>
           </div>
 
           <div>
-            <label class="label">분석 모드</label>
+            <label class="label">{{ $t('auto.m_946ae8af7bb0') }}</label>
             <div class="grid grid-cols-2 gap-3 mt-1">
               <div @click="form.mode = 'STRICT'" class="mode-option" :class="{ selected: form.mode === 'STRICT' }">
-                <div class="font-bold text-primary mb-1">엄격 (Strict)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">탭 이탈·붙여넣기를 엄격하게 감지. 시험·평가용.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_98ddc156a1da') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_52165e59b763') }}</div>
               </div>
               <div @click="form.mode = 'STANDARD'" class="mode-option" :class="{ selected: form.mode === 'STANDARD' }">
-                <div class="font-bold text-primary mb-1">표준 (Standard)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">일반 글쓰기 환경. 비정상 패턴에만 경고.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_52d6a7cd8410') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_9ed85ab8f981') }}</div>
               </div>
               <div @click="form.mode = 'RESEARCH'" class="mode-option" :class="{ selected: form.mode === 'RESEARCH' }">
-                <div class="font-bold text-primary mb-1">연구 (Research)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">자료 조사·외부 참조 허용.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_eecc18749edb') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_5d21be7fa6ed') }}</div>
               </div>
               <div @click="form.mode = 'CREATIVE'" class="mode-option" :class="{ selected: form.mode === 'CREATIVE' }">
-                <div class="font-bold text-primary mb-1">자유 (Creative)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">행동 제한 없이 타이핑 패턴만 수집.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_f59016e666f8') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_ffa03eb8f73a') }}</div>
               </div>
             </div>
           </div>
 
           <div class="flex flex-col">
-            <label class="label">가이드라인 템플릿 (학생에게 기본 제공)</label>
+            <label class="label">{{ $t('auto.m_e7863729827a') }}</label>
             <!-- Fixed height + internal scroll: a long template won't grow the
                  modal or overlap the sticky footer. -->
             <div class="relative" style="height: 220px;">
-              <RichTextEditor v-model="form.templateText" placeholder="여기에 템플릿 내용을 작성하세요..." />
+              <RichTextEditor v-model="form.templateText" :placeholder="$t('auto.m_bb7de9480191')" />
             </div>
           </div>
 
           <div class="flex justify-end gap-3 pt-4 border-t border-border sticky bottom-0 -mx-6 px-6 pb-1" style="background: var(--color-surface);">
-            <button type="button" @click="showCreateModal = false" class="btn btn-outline">취소</button>
+            <button type="button" @click="showCreateModal = false" class="btn btn-outline">{{ $t('auto.m_19b2d19bc141') }}</button>
             <button type="submit" class="btn btn-primary" :disabled="creating">
-              {{ creating ? '생성 중...' : '과제 생성하기' }}
+              {{ creating ? t('runtime.m_56bc49b0ea17') : t('runtime.m_f269066f2596') }}
             </button>
           </div>
         </form>
@@ -387,12 +389,12 @@ function statusLabel(s: string) {
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
         <div class="text-4xl mb-4">🗑️</div>
-        <h3 class="text-lg font-bold mb-2">학급 삭제</h3>
-        <p class="text-sm text-text-secondary mb-6">이 학급을 삭제하시겠습니까?<br>학급 내 모든 과제와 제출물이 함께 삭제되며 복구할 수 없습니다.</p>
+        <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_65ac7d8f5a04') }}</h3>
+        <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_6ce0e32f7586') }}<br>{{ $t('auto.m_2cb8d30bad29') }}</p>
         <div class="flex gap-2">
-          <button @click="showDeleteModal = false" class="btn btn-outline flex-1">취소</button>
+          <button @click="showDeleteModal = false" class="btn btn-outline flex-1">{{ $t('auto.m_19b2d19bc141') }}</button>
           <button @click="deleteClassroom" :disabled="deleting" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">
-            {{ deleting ? '삭제 중...' : '삭제' }}
+            {{ deleting ? t('runtime.m_d2884b2998a5') : t('runtime.m_fc81e222b97c') }}
           </button>
         </div>
       </div>

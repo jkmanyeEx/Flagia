@@ -4,6 +4,10 @@ import App from './App.vue'
 import './style.css'
 
 import { useAuth } from './composables/useAuth'
+import { i18n } from './i18n'
+import { initializePreferences } from './composables/usePreferences'
+
+initializePreferences()
 
 const router = createRouter({
   history: createWebHistory(),
@@ -72,4 +76,5 @@ router.beforeEach(async (to) => {
 
 const app = createApp(App)
 app.use(router)
+app.use(i18n)
 app.mount('#app')

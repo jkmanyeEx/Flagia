@@ -26,6 +26,6 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen flex items-center justify-center">
-    <div class="animate-pulse text-text-secondary">로딩 중...</div>
+    <div class="animate-pulse text-text-secondary">{{ $t('auto.m_06e61b86cbda') }}</div>
   </div>
 </template>

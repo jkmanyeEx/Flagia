@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth'
 import RichTextEditor from '../components/RichTextEditor.vue'
 
 import { resolveApiBase, resolveWsUrl } from '../composables/apiHost'
+import { translateError } from '../i18n'
 
 const API = resolveApiBase()
 const WS_URL = resolveWsUrl()
 const router = useRouter()
 const route = useRoute()
+const { t, locale } = useI18n()
 const { user, token, isAdmin } = useAuth()
 
 // Admin sees every assignment (scope=all); teachers always get only their own
@@ -37,9 +40,9 @@ const isLiveWatching = ref(false)
 const liveSocketAuthenticated = ref(false)
 const liveStatusText = computed(() => {
   if (!isLiveWatching.value) return ''
-  if (!liveSocketAuthenticated.value) return '연결 복구 중'
-  if (liveContent.value === null || liveContent.value.length === 0) return '학생의 입력을 기다리는 중'
-  return '실시간 연결됨'
+  if (!liveSocketAuthenticated.value) return t('runtime.m_18ac45c75561')
+  if (liveContent.value === null || liveContent.value.length === 0) return t('runtime.m_8d02e4577452')
+  return t('runtime.m_5120bfaf81eb')
 })
 let latestLiveSentAt = 0
 let latestLiveRevision = 0
@@ -100,10 +103,10 @@ async function saveTemplate() {
       showTemplateModal.value = false
     } else {
       const e = await res.json().catch(() => ({}))
-      alert(e.error || '템플릿 저장에 실패했습니다')
+      alert(translateError(e.code, e.error || t('runtime.m_e9ae0e983fce')))
     }
   } catch {
-    alert('템플릿 저장 중 오류가 발생했습니다')
+    alert(t('runtime.m_15435024be8c'))
   } finally {
     savingTemplate.value = false
   }
@@ -216,19 +219,21 @@ function connectWS() {
         forceSubmitResult.value = payload
         forceSubmitIsError.value = payload.failedCount > 0
         if (payload.targetCount === 0) {
-          forceSubmitMessage.value = '현재 작성 중인 학생이 없습니다.'
+          forceSubmitMessage.value = t('runtime.m_76597dada5a0')
         } else if (payload.failedCount > 0) {
-          forceSubmitMessage.value =
-            `세션 종료 ${payload.forceClosedCount}명, 실패 ${payload.failedCount}명입니다.`
+          forceSubmitMessage.value = t('teacher.forceSummary', {
+            closed: payload.forceClosedCount,
+            failed: payload.failedCount,
+          })
         } else {
-          forceSubmitMessage.value = `작성 중이던 ${payload.forceClosedCount}명의 세션을 종료했습니다.`
+          forceSubmitMessage.value = t('teacher.forceEnded', { count: payload.forceClosedCount })
         }
         fetchSubmissionsSilently()
       } else if (type === 'force_submit_error') {
         if (payload.requestId !== forceSubmitRequestId.value) return
         finishForceSubmitRequest()
         forceSubmitIsError.value = true
-        forceSubmitMessage.value = payload.error || '작성 세션 종료 요청에 실패했습니다.'
+        forceSubmitMessage.value = translateError(payload.code, payload.error || t('runtime.m_70c0a59be9af'))
       }
     } catch (err) {
       console.error('WS message error:', err)
@@ -387,7 +392,7 @@ function executeForceSubmit() {
 
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     forceSubmitIsError.value = true
-    forceSubmitMessage.value = '실시간 서버 연결이 끊겨 요청을 보낼 수 없습니다. 잠시 후 다시 시도해 주세요.'
+    forceSubmitMessage.value = t('runtime.m_2696b7faeb27')
     return
   }
 
@@ -405,7 +410,7 @@ function executeForceSubmit() {
     if (forceSubmitRequestId.value !== requestId) return
     finishForceSubmitRequest()
     forceSubmitIsError.value = true
-    forceSubmitMessage.value = '서버 응답이 지연되고 있습니다. 제출 현황을 확인한 뒤 다시 시도해 주세요.'
+    forceSubmitMessage.value = t('runtime.m_8caed1acf85e')
     fetchSubmissionsSilently()
   }, 120000)
 }
@@ -483,10 +488,10 @@ async function executeDeleteSub() {
       await fetchSubmissionsSilently()
     } else {
       const e = await res.json().catch(() => ({}))
-      alert(e.error || '제출물 초기화에 실패했습니다')
+      alert(translateError(e.code, e.error || t('runtime.m_21a3d0a17793')))
     }
   } catch (err) {
-    alert('제출물 초기화 중 오류가 발생했습니다')
+    alert(t('runtime.m_a50176d48a3d'))
   } finally {
     deletingSub.value = false
   }
@@ -526,12 +531,12 @@ function goToAnalysis(submissionId: string) {
 
 function exportCSV() {
   if (submissions.value.length === 0) return
-  const headers = ['학생명', '이메일', '상태', 'Flagia 점수', '판정', '제출일시']
+  const headers = [t('runtime.m_f58cba353bd8'), t('runtime.m_3c37764a2b97'), t('runtime.m_2926977ba7c9'), t('runtime.m_a7f1d63de443'), t('runtime.m_8bd39bb74e2f'), t('runtime.m_9b0b88cf6e02')]
   const rows = submissions.value.map(s => [
     s.student_name, s.student_email, s.status,
     s.flagia_score != null ? Number(s.flagia_score).toFixed(1) : '-',
     s.flag_status || '-',
-    s.submitted_at ? new Date(s.submitted_at).toLocaleString('ko-KR') : '-',
+    s.submitted_at ? new Date(s.submitted_at).toLocaleString(locale.value === 'ko' ? 'ko-KR' : 'en-US') : '-',
   ])
   const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -552,10 +557,10 @@ function copyJoinCode(code: string) {
 }
 
 function getModeLabel(mode: string) {
-  return { STRICT: '엄격', STANDARD: '표준', RESEARCH: '연구', CREATIVE: '자유' }[mode] || mode
+  return { STRICT: t('runtime.m_cb092501bb93'), STANDARD: t('runtime.m_989b51aff08d'), RESEARCH: t('runtime.m_02e00a021a7f'), CREATIVE: t('runtime.m_6285a6f51651') }[mode] || mode
 }
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(d).toLocaleDateString(locale.value === 'ko' ? 'ko-KR' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function getGaugeColor(flag: string) {
   return { GREEN: '#16A34A', AMBER: '#D97706', RED: '#DC2626' }[flag] || '#9CA3AF'
@@ -574,35 +579,33 @@ function getGaugeOffset(score: number) {
     <div v-if="!selectedAssignment">
       <div class="flex items-center justify-between mb-8">
         <div>
-          <h1 class="text-2xl font-bold text-text-primary">{{ isAdmin ? '전체 과제 (관리자)' : '과제 관리' }}</h1>
+          <h1 class="text-2xl font-bold text-text-primary">{{ isAdmin ? t('runtime.m_d845259c792c') : t('runtime.m_fb8617af8144') }}</h1>
           <p class="text-sm text-text-secondary mt-1">
             {{ isAdmin
-              ? '관리자 권한으로 모든 과제를 열람하고 관리할 수 있습니다. 직접 만들거나 참여하지 않은 과제는 표시로 구분됩니다.'
-              : '학생들에게 과제를 부여하고 분석 결과를 확인하세요.' }}
+              ? t('runtime.m_cf9c057ee299')
+              : t('runtime.m_7aeaf5b33395') }}
           </p>
         </div>
-        <button @click="showCreateModal = true" class="btn btn-primary">
-          + 새 과제 만들기
-        </button>
+        <button @click="showCreateModal = true" class="btn btn-primary"> {{ $t('auto.m_06a220c539c4') }} </button>
       </div>
 
       <div class="card overflow-hidden">
         <table class="data-table">
           <thead>
             <tr>
-              <th>과제 제목</th>
-              <th>참여 코드</th>
-              <th>마감일</th>
-              <th>설정</th>
-              <th class="text-right">관리</th>
+              <th>{{ $t('auto.m_16b94a5fa45e') }}</th>
+              <th>{{ $t('auto.m_37cac543c064') }}</th>
+              <th>{{ $t('auto.m_7484df028355') }}</th>
+              <th>{{ $t('auto.m_c14a567ea996') }}</th>
+              <th class="text-right">{{ $t('auto.m_c29fba5a7caf') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading">
-              <td colspan="5" class="text-center py-8 text-text-muted">로딩 중...</td>
+              <td colspan="5" class="text-center py-8 text-text-muted">{{ $t('auto.m_06e61b86cbda') }}</td>
             </tr>
             <tr v-else-if="assignments.length === 0">
-              <td colspan="5" class="text-center py-12 text-text-muted">생성된 과제가 없습니다.</td>
+              <td colspan="5" class="text-center py-12 text-text-muted">{{ $t('auto.m_dcd5f085dee3') }}</td>
             </tr>
             <tr v-else v-for="a in assignments" :key="a.id"
                 @click="selectAssignment(a)"
@@ -611,9 +614,9 @@ function getGaugeOffset(score: number) {
                 <div class="font-medium text-text-primary">{{ a.title }}</div>
                 <div v-if="isAdmin && a.teacher_name" class="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
                   <span>👤 {{ a.teacher_name }}</span>
-                  <span v-if="owns(a)" class="badge badge-green text-[10px]">내 과제</span>
-                  <span v-else-if="invited(a)" class="badge badge-amber text-[10px]">참여 중</span>
-                  <span v-else class="badge text-[10px] bg-background text-text-muted">미소유·미참여</span>
+                  <span v-if="owns(a)" class="badge badge-green text-[10px]">{{ $t('auto.m_a2c25143883d') }}</span>
+                  <span v-else-if="invited(a)" class="badge badge-amber text-[10px]">{{ $t('auto.m_5df8dd738eb1') }}</span>
+                  <span v-else class="badge text-[10px] bg-background text-text-muted">{{ $t('auto.m_1bcb8a0449c6') }}</span>
                 </div>
               </td>
               <td>
@@ -625,11 +628,11 @@ function getGaugeOffset(score: number) {
               <td>
                 <div class="flex items-center gap-2">
                   <span class="badge badge-green text-xs">{{ getModeLabel(a.mode) }}</span>
-                  <span class="text-xs text-text-muted">{{ a.time_limit }}분</span>
+                  <span class="text-xs text-text-muted">{{ a.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
                 </div>
               </td>
               <td class="text-right">
-                <button v-if="owns(a) || isAdmin" @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">삭제</button>
+                <button v-if="owns(a) || isAdmin" @click.stop="confirmDelete(a.id)" class="btn btn-ghost text-danger btn-xs">{{ $t('auto.m_fc81e222b97c') }}</button>
               </td>
             </tr>
           </tbody>
@@ -641,26 +644,25 @@ function getGaugeOffset(score: number) {
     <div v-else>
       <div class="mb-6 flex items-center gap-4">
         <button @click="backToList" class="btn btn-ghost px-2 py-1 flex items-center gap-2 text-text-secondary">
-          <span>←</span> 목록으로
-        </button>
+          <span>←</span> {{ $t('auto.m_6305eb231276') }} </button>
       </div>
       
       <!-- Stats -->
       <div class="grid grid-cols-4 gap-4 mb-6">
         <div class="stat-card">
-          <div class="stat-label">전체 제출</div>
+          <div class="stat-label">{{ $t('auto.m_f90ccb90f3c9') }}</div>
           <div class="stat-value text-text-primary">{{ totalSubmissions }}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">제출 완료</div>
+          <div class="stat-label">{{ $t('auto.m_2349d1875e73') }}</div>
           <div class="stat-value text-flag-green">{{ submittedCount }}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">평균 점수</div>
+          <div class="stat-label">{{ $t('auto.m_12130facb243') }}</div>
           <div class="stat-value text-primary">{{ avgScore || '-' }}</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">주의 필요</div>
+          <div class="stat-label">{{ $t('auto.m_960042ef025d') }}</div>
           <div class="stat-value text-flag-amber">{{ flaggedCount }}</div>
         </div>
       </div>
@@ -672,23 +674,20 @@ function getGaugeOffset(score: number) {
             <h2 class="text-xl font-bold text-text-primary">{{ selectedAssignment.title }}</h2>
             <div class="bg-primary-light text-primary px-2.5 py-1 rounded flex items-center gap-2 cursor-pointer border border-primary/20 hover:bg-primary hover:text-white transition-colors" @click="copyJoinCode(selectedAssignment.join_code)">
               <span class="font-mono font-bold tracking-wider">{{ selectedAssignment.join_code }}</span>
-              <span class="text-xs">{{ copySuccess ? '✅ 복사됨' : '📋 복사' }}</span>
+              <span class="text-xs">{{ copySuccess ? t('runtime.m_bd5bd14ccbd6') : t('runtime.m_e1ac63f18ec7') }}</span>
             </div>
           </div>
           <div class="flex items-center gap-4 text-sm text-text-muted">
             <span>📅 {{ formatDate(selectedAssignment.due_date) }}</span>
-            <span>⏱ {{ selectedAssignment.time_limit }}분</span>
-            <span>📏 {{ selectedAssignment.text_limit?.toLocaleString() }}자</span>
+            <span>⏱ {{ selectedAssignment.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
+            <span>📏 {{ selectedAssignment.text_limit?.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
             <span class="badge badge-green py-0.5">{{ getModeLabel(selectedAssignment.mode) }}</span>
           </div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <button @click="openTemplate" class="btn btn-outline">
-            📄 템플릿 {{ canEditSelected ? '보기 / 편집' : '보기' }}
+          <button @click="openTemplate" class="btn btn-outline"> {{ $t('auto.m_90282a88c01a') }} {{ canEditSelected ? t('runtime.m_b2cca0411a6a') : t('runtime.m_58d6978a3e34') }}
           </button>
-          <button v-if="submissions.length > 0" @click="exportCSV" class="btn btn-outline">
-            📊 CSV 내보내기
-          </button>
+          <button v-if="submissions.length > 0" @click="exportCSV" class="btn btn-outline"> {{ $t('auto.m_8af400019b6d') }} </button>
         </div>
       </div>
 
@@ -696,9 +695,8 @@ function getGaugeOffset(score: number) {
       <div class="card overflow-hidden">
         <div class="p-4 border-b border-border bg-background/50 flex items-center justify-between gap-4">
           <div>
-            <h3 class="font-semibold text-text-primary">학생 제출 현황</h3>
-            <p v-if="canForceSubmitSelected" class="text-xs text-text-muted mt-1">
-              현재 작성 중 <strong class="text-text-primary">{{ inProgressCount }}명</strong>
+            <h3 class="font-semibold text-text-primary">{{ $t('auto.m_df5f423a751e') }}</h3>
+            <p v-if="canForceSubmitSelected" class="text-xs text-text-muted mt-1"> {{ $t('auto.m_8b9a1646afa1') }} <strong class="text-text-primary">{{ inProgressCount }}{{ $t('auto.m_5a62fd50d243') }}</strong>
             </p>
           </div>
           <button
@@ -708,7 +706,7 @@ function getGaugeOffset(score: number) {
             :disabled="inProgressCount === 0 || forceSubmitting"
           >
             <svg v-if="forceSubmitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            {{ forceSubmitting ? '종료 처리 중...' : '작성 일괄 종료' }}
+            {{ forceSubmitting ? t('runtime.m_8d39965590b7') : t('runtime.m_cdcb0eeafe8c') }}
           </button>
         </div>
 
@@ -720,12 +718,7 @@ function getGaugeOffset(score: number) {
             : 'bg-green-50 border-green-200 text-green-700'"
         >
           <div class="font-medium">{{ forceSubmitMessage }}</div>
-          <div v-if="forceSubmitResult" class="text-xs mt-1 opacity-80">
-            요청 대상 {{ forceSubmitResult.targetCount }}명 · 접속 중 전달 {{ forceSubmitResult.deliveredCount }}명 ·
-            이미 제출되어 제외 {{ forceSubmitResult.alreadySubmittedCount }}명 · 최종 강제 종료 {{ forceSubmitResult.forceClosedCount }}명
-            <span v-if="forceSubmitResult.analysisFailedCount">
-              · 분석 실패 {{ forceSubmitResult.analysisFailedCount }}명
-            </span>
+          <div v-if="forceSubmitResult" class="text-xs mt-1 opacity-80"> {{ $t('auto.m_61df3c30cb0f') }} {{ forceSubmitResult.targetCount }}{{ $t('auto.m_7be13031fd7c') }} {{ forceSubmitResult.deliveredCount }}{{ $t('auto.m_c5b781e824a2') }} {{ forceSubmitResult.alreadySubmittedCount }}{{ $t('auto.m_78c60662c4e9') }} {{ forceSubmitResult.forceClosedCount }}{{ $t('auto.m_5a62fd50d243') }} <span v-if="forceSubmitResult.analysisFailedCount"> {{ $t('auto.m_bac4b3b97869') }} {{ forceSubmitResult.analysisFailedCount }}{{ $t('auto.m_5a62fd50d243') }} </span>
           </div>
           <div v-if="forceSubmitResult?.errors?.length" class="text-xs mt-1">
             {{ forceSubmitResult.errors.join(' · ') }}
@@ -735,20 +728,20 @@ function getGaugeOffset(score: number) {
         <table class="data-table">
           <thead>
             <tr>
-              <th>학생</th>
-              <th>상태</th>
-              <th>성적</th>
-              <th>제출일시</th>
-              <th>무결성</th>
-              <th>분석</th>
+              <th>{{ $t('auto.m_d8f324428d3c') }}</th>
+              <th>{{ $t('auto.m_2926977ba7c9') }}</th>
+              <th>{{ $t('auto.m_d3bb3576294c') }}</th>
+              <th>{{ $t('auto.m_9b0b88cf6e02') }}</th>
+              <th>{{ $t('auto.m_acd8d777b590') }}</th>
+              <th>{{ $t('auto.m_d5ce088d01e0') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loadingSubs">
-              <td colspan="6" class="text-center py-8 text-text-muted">로딩 중...</td>
+              <td colspan="6" class="text-center py-8 text-text-muted">{{ $t('auto.m_06e61b86cbda') }}</td>
             </tr>
             <tr v-else-if="submissions.length === 0">
-              <td colspan="6" class="text-center py-12 text-text-muted">아직 제출된 글이 없습니다.</td>
+              <td colspan="6" class="text-center py-12 text-text-muted">{{ $t('auto.m_b6f303b62889') }}</td>
             </tr>
             <tr v-else v-for="sub in submissions" :key="sub.id" @click="openDetail(sub)" class="cursor-pointer hover:bg-background">
               <td>
@@ -769,7 +762,7 @@ function getGaugeOffset(score: number) {
                   'bg-primary-light text-primary': sub.status === 'IN_PROGRESS',
                   'bg-background text-text-muted': sub.status === 'ASSIGNED',
                 }">
-                  {{ sub.status === 'SUBMITTED' ? '제출 완료' : sub.status === 'FORCE_CLOSED' ? '자동 제출' : sub.status === 'IN_PROGRESS' ? '작성 중' : '시작 전' }}
+                  {{ sub.status === 'SUBMITTED' ? t('runtime.m_2349d1875e73') : sub.status === 'FORCE_CLOSED' ? t('runtime.m_f8421db5e1f3') : sub.status === 'IN_PROGRESS' ? t('runtime.m_5d31848228b8') : t('runtime.m_bcfe1cbb9cd3') }}
                 </span>
               </td>
               <!-- Graded score (teacher's grade) — the primary, prominent value -->
@@ -777,7 +770,7 @@ function getGaugeOffset(score: number) {
                 <div v-if="sub.score != null" class="font-bold text-lg text-text-primary">
                   {{ Number(sub.score) }}<span class="text-xs font-normal text-text-muted"> / {{ selectedAssignment?.max_score || 100 }}</span>
                 </div>
-                <span v-else class="text-xs text-text-muted">미채점</span>
+                <span v-else class="text-xs text-text-muted">{{ $t('auto.m_9d93f3f28137') }}</span>
               </td>
               <td class="text-sm text-text-muted">
                 {{ sub.submitted_at ? formatDate(sub.submitted_at) : '-' }}
@@ -791,9 +784,7 @@ function getGaugeOffset(score: number) {
                 <span v-else class="text-text-muted text-sm">-</span>
               </td>
               <td>
-                <button v-if="sub.flagia_score != null" @click.stop="goToAnalysis(sub.id)" class="btn btn-ghost btn-sm text-primary">
-                  상세 분석 →
-                </button>
+                <button v-if="sub.flagia_score != null" @click.stop="goToAnalysis(sub.id)" class="btn btn-ghost btn-sm text-primary"> {{ $t('auto.m_5af082f8c110') }} </button>
               </td>
             </tr>
           </tbody>
@@ -807,8 +798,7 @@ function getGaugeOffset(score: number) {
         <div class="flex items-center justify-between mb-4">
           <div>
             <h3 class="text-xl font-bold flex items-center gap-2">
-              {{ detailSubmission.student_name }}의 제출물
-              <span v-if="isLiveWatching" class="inline-flex items-center gap-1 text-xs font-semibold text-flag-red">
+              {{ detailSubmission.student_name }}{{ $t('auto.m_c64e9dfe5d92') }} <span v-if="isLiveWatching" class="inline-flex items-center gap-1 text-xs font-semibold text-flag-red">
                 <span class="live-dot"></span> {{ liveStatusText }}
               </span>
             </h3>
@@ -828,28 +818,22 @@ function getGaugeOffset(score: number) {
           }">
             {{ detailSubmission.flag_status }}
           </span>
-          <button @click="goToAnalysis(detailSubmission.id); closeDetail()" class="btn btn-primary ml-auto">
-            상세 분석 보기
-          </button>
+          <button @click="goToAnalysis(detailSubmission.id); closeDetail()" class="btn btn-primary ml-auto"> {{ $t('auto.m_c9f2e030e2fb') }} </button>
         </div>
 
-        <h4 class="text-sm font-semibold mb-2">{{ isLiveWatching ? '실시간 작성 내용' : '제출 내용' }}</h4>
+        <h4 class="text-sm font-semibold mb-2">{{ isLiveWatching ? t('runtime.m_ef88186df538') : t('runtime.m_3c42d2d43284') }}</h4>
         <!-- Live view: stream the student's current plain text as they write -->
         <div v-if="isLiveWatching" class="border border-flag-red/30 rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
           <div v-if="liveContent" class="whitespace-pre-wrap text-text-primary leading-relaxed">{{ liveContent }}</div>
-          <div v-else class="text-text-muted text-sm">학생의 작성 내용을 기다리는 중...</div>
+          <div v-else class="text-text-muted text-sm">{{ $t('auto.m_1ac3e72bec9f') }}</div>
         </div>
         <div v-else class="border border-border rounded-lg p-6 max-h-[45vh] overflow-y-auto bg-white shadow-inner mb-6">
-          <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || '(내용 없음)'"></div>
+          <div class="markdown-body ProseMirror" v-html="detailSubmission.final_markdown || t('common.noContent')"></div>
         </div>
 
         <div class="flex justify-between items-center pt-4 border-t border-border">
-          <button @click="confirmDeleteSub(detailSubmission)" class="btn btn-danger btn-sm">
-            제출물 초기화 (다시 쓰기 허용)
-          </button>
-          <button @click="closeDetail" class="btn btn-outline btn-sm">
-            닫기
-          </button>
+          <button @click="confirmDeleteSub(detailSubmission)" class="btn btn-danger btn-sm"> {{ $t('auto.m_ced3aeff4cc4') }} </button>
+          <button @click="closeDetail" class="btn btn-outline btn-sm"> {{ $t('auto.m_94b7dba15907') }} </button>
         </div>
       </div>
     </div>
@@ -859,8 +843,8 @@ function getGaugeOffset(score: number) {
       <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
         <div class="flex items-start justify-between mb-4 flex-shrink-0">
           <div>
-            <h3 class="text-xl font-bold">과제 템플릿</h3>
-            <p class="text-xs text-text-muted mt-0.5">{{ selectedAssignment.title }} · 학생에게 기본 제공되는 가이드라인 텍스트</p>
+            <h3 class="text-xl font-bold">{{ $t('auto.m_d329efb8767d') }}</h3>
+            <p class="text-xs text-text-muted mt-0.5">{{ selectedAssignment.title }} {{ $t('auto.m_6e61fab67a11') }}</p>
           </div>
           <button @click="showTemplateModal = false" class="btn btn-ghost btn-xs">✕</button>
         </div>
@@ -868,15 +852,13 @@ function getGaugeOffset(score: number) {
         <!-- Editable (owner / admin) -->
         <div v-if="canEditSelected" class="flex flex-col flex-1">
           <div class="relative" style="height: 360px;">
-            <RichTextEditor v-model="templateDraft" placeholder="여기에 템플릿 내용을 작성하세요..." />
+            <RichTextEditor v-model="templateDraft" :placeholder="$t('auto.m_bb7de9480191')" />
           </div>
-          <p class="text-xs text-text-muted mt-2">
-            ⚠️ 템플릿 변경은 이후 새로 시작하는 학생에게 적용됩니다. 이미 작성 중이거나 제출한 학생에게는 영향을 주지 않습니다.
-          </p>
+          <p class="text-xs text-text-muted mt-2"> {{ $t('auto.m_da8f764c8b85') }} </p>
           <div class="flex justify-end gap-3 pt-4 mt-2 border-t border-border">
-            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">닫기</button>
+            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">{{ $t('auto.m_94b7dba15907') }}</button>
             <button type="button" @click="saveTemplate" class="btn btn-primary" :disabled="savingTemplate">
-              {{ savingTemplate ? '저장 중...' : '템플릿 저장' }}
+              {{ savingTemplate ? t('runtime.m_5d687060860a') : t('runtime.m_36a3bfccdf49') }}
             </button>
           </div>
         </div>
@@ -884,10 +866,10 @@ function getGaugeOffset(score: number) {
         <!-- Read-only view -->
         <div v-else class="flex flex-col flex-1">
           <div class="border border-border rounded-lg p-6 max-h-[60vh] overflow-y-auto bg-white shadow-inner">
-            <div class="markdown-body ProseMirror" v-html="selectedAssignment.template_text || '(템플릿 없음)'"></div>
+            <div class="markdown-body ProseMirror" v-html="selectedAssignment.template_text || t('common.noTemplate')"></div>
           </div>
           <div class="flex justify-end pt-4 mt-2 border-t border-border">
-            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">닫기</button>
+            <button type="button" @click="showTemplateModal = false" class="btn btn-outline">{{ $t('auto.m_94b7dba15907') }}</button>
           </div>
         </div>
       </div>
@@ -897,72 +879,72 @@ function getGaugeOffset(score: number) {
     <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
         <div class="flex items-center justify-between mb-5 flex-shrink-0">
-          <h3 class="text-xl font-bold">새 과제 만들기</h3>
+          <h3 class="text-xl font-bold">{{ $t('auto.m_8c5ef35b4d30') }}</h3>
           <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
         </div>
 
         <form @submit.prevent="createAssignment" class="flex flex-col gap-5 flex-1">
           <div>
-            <label class="label">과제 제목</label>
-            <input v-model="form.title" class="input" placeholder="예: 인공지능의 윤리적 과제" required />
+            <label class="label">{{ $t('auto.m_16b94a5fa45e') }}</label>
+            <input v-model="form.title" class="input" :placeholder="$t('auto.m_725b776cbbc1')" required />
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="label">마감일</label>
+              <label class="label">{{ $t('auto.m_7484df028355') }}</label>
               <input v-model="form.dueDate" type="datetime-local" class="input" required />
             </div>
             <div>
-              <label class="label">제한 시간 (분)</label>
+              <label class="label">{{ $t('auto.m_abda63b055e7') }}</label>
               <input v-model.number="form.timeLimit" type="number" class="input" min="10" max="300" />
             </div>
           </div>
 
           <div>
-            <label class="label">글자 수 제한</label>
+            <label class="label">{{ $t('auto.m_fd55bbb0e0a3') }}</label>
             <input v-model.number="form.textLimit" type="number" class="input" min="100" max="50000" />
           </div>
 
           <div>
-            <label class="label">최대 배점 (만점 기준)</label>
+            <label class="label">{{ $t('auto.m_05622b077f57') }}</label>
             <input v-model.number="form.maxScore" type="number" class="input" min="1" max="1000" placeholder="100" />
           </div>
 
           <div>
-            <label class="label">분석 모드</label>
+            <label class="label">{{ $t('auto.m_946ae8af7bb0') }}</label>
             <div class="grid grid-cols-2 gap-3 mt-1">
               <div @click="form.mode = 'STRICT'" class="mode-option" :class="{ selected: form.mode === 'STRICT' }">
-                <div class="font-bold text-primary mb-1">엄격 (Strict)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">모든 탭 이탈 및 복사-붙여넣기를 엄격하게 감지합니다. 시험이나 평가에 적합합니다.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_98ddc156a1da') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_471ef6314b49') }}</div>
               </div>
               <div @click="form.mode = 'STANDARD'" class="mode-option" :class="{ selected: form.mode === 'STANDARD' }">
-                <div class="font-bold text-primary mb-1">표준 (Standard)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">일반적인 글쓰기 환경. 잦은 탭 이탈이나 비정상적인 패턴에만 경고합니다.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_52d6a7cd8410') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_5c3c575b9d98') }}</div>
               </div>
               <div @click="form.mode = 'RESEARCH'" class="mode-option" :class="{ selected: form.mode === 'RESEARCH' }">
-                <div class="font-bold text-primary mb-1">연구 (Research)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">자료 조사를 위한 탭 이동과 외부 텍스트 참조를 허용합니다.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_eecc18749edb') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_60672c56889a') }}</div>
               </div>
               <div @click="form.mode = 'CREATIVE'" class="mode-option" :class="{ selected: form.mode === 'CREATIVE' }">
-                <div class="font-bold text-primary mb-1">자유 (Creative)</div>
-                <div class="text-xs text-text-secondary leading-relaxed">행동을 전혀 제한하지 않고 기본적인 타이핑 패턴만 수집합니다.</div>
+                <div class="font-bold text-primary mb-1">{{ $t('auto.m_f59016e666f8') }}</div>
+                <div class="text-xs text-text-secondary leading-relaxed">{{ $t('auto.m_3ba3791af32e') }}</div>
               </div>
             </div>
           </div>
 
           <div class="flex flex-col">
-            <label class="label">가이드라인 템플릿 (학생에게 기본 제공되는 텍스트)</label>
+            <label class="label">{{ $t('auto.m_cafdf325afaa') }}</label>
             <!-- Fixed height + internal scroll: a long template won't grow the
                  modal or overlap the sticky footer. -->
             <div class="relative" style="height: 220px;">
-              <RichTextEditor v-model="form.templateText" placeholder="여기에 템플릿 내용을 작성하세요..." />
+              <RichTextEditor v-model="form.templateText" :placeholder="$t('auto.m_bb7de9480191')" />
             </div>
           </div>
 
           <div class="flex justify-end gap-3 pt-4 border-t border-border sticky bottom-0 -mx-6 px-6 pb-1" style="background: var(--color-surface);">
-            <button type="button" @click="showCreateModal = false" class="btn btn-outline">취소</button>
+            <button type="button" @click="showCreateModal = false" class="btn btn-outline">{{ $t('auto.m_19b2d19bc141') }}</button>
             <button type="submit" class="btn btn-primary" :disabled="creating">
-              {{ creating ? '생성 중...' : '과제 생성하기' }}
+              {{ creating ? t('runtime.m_56bc49b0ea17') : t('runtime.m_f269066f2596') }}
             </button>
           </div>
         </form>
@@ -978,32 +960,27 @@ function getGaugeOffset(score: number) {
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="text-center">
           <div class="text-4xl mb-4">⚠️</div>
-          <h3 class="text-lg font-bold mb-2">작성 세션 일괄 종료</h3>
-          <p class="text-sm text-text-secondary leading-relaxed">
-            현재 작성 중인 학생 {{ inProgressCount }}명의 글쓰기를 종료하고, 마지막으로 저장된 내용을 자동 제출합니다.
-            이미 제출한 학생에게는 영향을 주지 않습니다.
-          </p>
+          <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_9084ae153c26') }}</h3>
+          <p class="text-sm text-text-secondary leading-relaxed"> {{ $t('auto.m_b5fe389ffc0a') }} {{ inProgressCount }}{{ $t('auto.m_b77a9f2e10f3') }} </p>
         </div>
         <div class="rounded-lg border border-red-200 bg-red-50 p-4 my-5">
-          <div class="text-xs text-red-600 font-medium mb-1">실행할 과제</div>
+          <div class="text-xs text-red-600 font-medium mb-1">{{ $t('auto.m_9501b92d4457') }}</div>
           <div class="font-semibold text-text-primary">{{ selectedAssignment.title }}</div>
-          <div class="text-sm text-red-700 mt-1">작성 중 {{ inProgressCount }}명</div>
+          <div class="text-sm text-red-700 mt-1">{{ $t('auto.m_5d31848228b8') }} {{ inProgressCount }}{{ $t('auto.m_5a62fd50d243') }}</div>
         </div>
         <div class="flex gap-2">
           <button
             @click="showForceSubmitModal = false"
             class="btn btn-outline flex-1"
             :disabled="forceSubmitting"
-          >
-            취소
-          </button>
+          > {{ $t('auto.m_19b2d19bc141') }} </button>
           <button
             @click="executeForceSubmit"
             class="btn btn-danger flex-1"
             :disabled="forceSubmitting || inProgressCount === 0"
           >
             <svg v-if="forceSubmitting" class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            {{ forceSubmitting ? '종료 처리 중...' : '종료 및 제출' }}
+            {{ forceSubmitting ? t('runtime.m_8d39965590b7') : t('runtime.m_2183e45132d2') }}
           </button>
         </div>
       </div>
@@ -1013,11 +990,11 @@ function getGaugeOffset(score: number) {
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
         <div class="text-4xl mb-4">🗑️</div>
-        <h3 class="text-lg font-bold mb-2">과제 삭제</h3>
-        <p class="text-sm text-text-secondary mb-6">이 과제를 삭제하시겠습니까?<br>모든 제출물이 함께 삭제되며 복구할 수 없습니다.</p>
+        <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_d43e543db9a2') }}</h3>
+        <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_ba3c45021d9d') }}<br>{{ $t('auto.m_4e7508a15293') }}</p>
         <div class="flex gap-2">
-          <button @click="showDeleteModal = false" class="btn btn-outline flex-1">취소</button>
-          <button @click="executeDelete" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">삭제</button>
+          <button @click="showDeleteModal = false" class="btn btn-outline flex-1">{{ $t('auto.m_19b2d19bc141') }}</button>
+          <button @click="executeDelete" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">{{ $t('auto.m_fc81e222b97c') }}</button>
         </div>
       </div>
     </div>
@@ -1026,12 +1003,12 @@ function getGaugeOffset(score: number) {
     <div v-if="showDeleteSubModal" class="modal-overlay" @click.self="showDeleteSubModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
         <div class="text-4xl mb-4">🔄</div>
-        <h3 class="text-lg font-bold mb-2">제출물 초기화</h3>
-        <p class="text-sm text-text-secondary mb-6">제출물을 초기화하시겠습니까?<br>학생의 진행 상황과 작성 시간이 모두 초기화되며, 학생은 처음부터 다시 작성할 수 있게 됩니다.</p>
+        <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_7c2e6a580fc6') }}</h3>
+        <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_7f81bb11971e') }}<br>{{ $t('auto.m_7c88ee6946c2') }}</p>
         <div class="flex gap-2">
-          <button @click="showDeleteSubModal = false" class="btn btn-outline flex-1">취소</button>
+          <button @click="showDeleteSubModal = false" class="btn btn-outline flex-1">{{ $t('auto.m_19b2d19bc141') }}</button>
           <button @click="executeDeleteSub" :disabled="deletingSub" class="btn bg-red-600 text-white hover:bg-red-700 flex-1 border-none">
-            {{ deletingSub ? '초기화 중...' : '초기화' }}
+            {{ deletingSub ? t('runtime.m_6a4e0f00f23f') : t('runtime.m_ff75b4ff2463') }}
           </button>
         </div>
       </div>

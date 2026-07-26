@@ -3,6 +3,9 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { watch, onBeforeUnmount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: string
@@ -45,7 +48,7 @@ const editor = useEditor({
       link: false,
     }),
     Placeholder.configure({
-      placeholder: props.placeholder || '내용을 입력하세요...',
+      placeholder: props.placeholder || t('runtime.m_95531b206301'),
     }),
   ],
   content: props.modelValue,
@@ -146,7 +149,7 @@ onBeforeUnmount(() => {
   height: 100%;
   width: 100%;
   border-radius: 0.5rem;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   overflow: hidden;

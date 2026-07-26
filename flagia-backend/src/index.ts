@@ -33,6 +33,27 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
+// Attach stable, locale-independent codes to every user-facing REST error.
+// Existing message text remains for older clients.
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (body?.error && !body.code) {
+      const status = res.statusCode;
+      const code =
+        status === 401 ? 'UNAUTHENTICATED'
+          : status === 403 ? 'FORBIDDEN'
+            : status === 404 ? 'NOT_FOUND'
+              : status === 409 ? 'CONFLICT'
+                : status >= 500 ? 'SERVER_ERROR'
+                  : 'INVALID_REQUEST';
+      return originalJson({ ...body, code });
+    }
+    return originalJson(body);
+  }) as typeof res.json;
+  next();
+});
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
