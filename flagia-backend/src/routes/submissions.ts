@@ -192,11 +192,11 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
       sessionSummary: a.sessionSummary,
     } : null);
 
-    // If cached analysis exists and is up to date (version 3), return it
+    // If cached analysis exists and is up to date (version 4), return it
     if (submission.analysis_json) {
       try {
         const cached = JSON.parse(submission.analysis_json);
-        if (cached && cached.version === 3) {
+        if (cached && cached.version === 4) {
           res.json({
             submission: {
               id: submission.id,
