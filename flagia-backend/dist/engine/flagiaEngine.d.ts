@@ -1,3 +1,5 @@
+import type { LinguisticResult, RevisionAnalysis } from '../linguistic/types';
+export declare const ANALYSIS_VERSION = 5;
 /**
  * Flagia Analysis Engine v2.0
  *
@@ -11,11 +13,11 @@
  * - Writing timeline with intensity buckets
  * - Natural language verdict
  */
-interface TelemetryEvent {
+export interface TelemetryEvent {
     seq: number;
     timestamp: number;
     iki: number;
-    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect' | 'snapshot';
+    type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect' | 'snapshot' | 'document_frame';
     meta: {
         key?: string;
         cursorPosition?: number;
@@ -23,6 +25,13 @@ interface TelemetryEvent {
         actionType?: string;
         internal?: boolean;
         text?: string;
+        v?: number;
+        from?: number;
+        to?: number;
+        insertedText?: string;
+        selectionLength?: number;
+        textLength?: number;
+        baseText?: string;
     };
     currentHash: string;
 }
@@ -54,14 +63,17 @@ interface SessionSummary {
     totalCharactersTyped: number;
     averageWPM: number;
 }
-interface AnalysisResult {
+export interface AnalysisResult {
     version?: number;
     flagiaScore: number;
     baseScore?: number;
     scoreAdjustments?: {
         label: string;
         points: number;
+        code?: 'linguistic';
     }[];
+    linguistic?: LinguisticResult;
+    sourceFingerprint?: string;
     transcription?: {
         basis: 'none' | 'divergence' | 'rr' | 'template';
         triggered: boolean;
@@ -90,9 +102,19 @@ interface AnalysisResult {
     verdict: string;
     verdictDetail: string;
 }
+export interface RrDivergenceCorrelation {
+    eligible: boolean;
+    claimedRevision: number;
+    expectedDivergence: number;
+    divergenceShortfall: number;
+    risk: number;
+    actingBoost: number;
+}
+export declare function flagStatusForScore(score: number, mode: string): 'GREEN' | 'AMBER' | 'RED';
+export declare function calculateRrDivergenceCorrelation(revisionRatio: number, divergenceRatio: number): RrDivergenceCorrelation;
 /**
  * Main analysis function
  */
-export declare function runFlagiaAnalysis(rawEvents: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string, submittedAt?: Date | string): AnalysisResult;
+export declare function runFlagiaAnalysis(rawEvents: TelemetryEvent[], finalMarkdown: string, templateText: string, mode: string, submittedAt?: Date | string, semanticRevision?: RevisionAnalysis): AnalysisResult;
 export {};
 //# sourceMappingURL=flagiaEngine.d.ts.map

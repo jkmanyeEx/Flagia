@@ -1,0 +1,5 @@
+kiwipiepy==0.22.2
+scikit-learn==1.7.2
+transformers==4.57.6
+torch>=2.6,<3
+safetensors>=0.6,<1

@@ -1,4 +1,5 @@
 const path = require('node:path');
+const fs = require('node:fs');
 
 // In production this file is loaded through /home/ubuntu/Flagia/current.
 // Keeping paths relative makes the same configuration usable in a release
@@ -36,6 +37,7 @@ module.exports = {
       listen_timeout: 10000,
       env: {
         NODE_ENV: 'production',
+        FLAGIA_RELEASE_ID: path.basename(fs.realpathSync(appRoot)),
         HOST: '127.0.0.1',
         PORT: 3000,
       },

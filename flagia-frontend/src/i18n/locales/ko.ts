@@ -1,7 +1,9 @@
 import { autoKo } from '../generated'
 import { runtimeKo } from '../runtime-generated'
+import { linguisticKo } from '../linguistic'
 
 export default {
+  linguistic: linguisticKo,
   auto: autoKo,
   runtime: runtimeKo,
   common: {

@@ -13,6 +13,8 @@ const submissions_1 = __importDefault(require("./routes/submissions"));
 const classrooms_1 = __importDefault(require("./routes/classrooms"));
 const database_1 = __importDefault(require("./database"));
 const migrate_1 = require("./migrate");
+const flagiaEngine_1 = require("./engine/flagiaEngine");
+const runtime_1 = require("./linguistic/runtime");
 const app = (0, express_1.default)();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -55,7 +57,10 @@ app.use((_req, res, next) => {
 });
 // Health check
 app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: Date.now() });
+    res.json({ status: 'ok', timestamp: Date.now(),
+        release: process.env.FLAGIA_RELEASE_ID || 'development', analysisVersion: flagiaEngine_1.ANALYSIS_VERSION,
+        linguistic: { modelVersion: (0, runtime_1.linguisticModelVersion)() },
+    });
 });
 // Server time sync endpoint
 app.get('/api/time', (_req, res) => {

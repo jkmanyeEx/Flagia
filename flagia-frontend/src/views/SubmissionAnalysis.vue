@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import LinguisticPanel from '../components/LinguisticPanel.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
@@ -32,16 +33,45 @@ const replayIntervalId = ref<any>(null)
 
 const WS_URL = resolveWsUrl()
 let socket: WebSocket | null = null
+let analysisPoll: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+let refreshing = false
+const retryingAnalysis = ref(false)
+
+function scheduleAnalysisPoll() {
+  if (analysisPoll) clearTimeout(analysisPoll)
+  analysisPoll = null
+  if (!disposed && data.value?.analysis?.linguistic?.status === 'pending') {
+    analysisPoll = setTimeout(async () => {
+      await refreshDataSilently()
+      scheduleAnalysisPoll()
+    }, 2000)
+  }
+}
+watch(() => data.value?.analysis?.linguistic?.status, scheduleAnalysisPoll)
+
+async function retryLinguisticAnalysis() {
+  if (retryingAnalysis.value) return
+  retryingAnalysis.value = true
+  try {
+    await api(`/api/submissions/${route.params.submissionId}/analysis/retry`, { method: 'POST', token: token.value! })
+    await refreshDataSilently()
+  } catch (err: any) {
+    error.value = err.message || t('linguistic.retryFailed')
+  } finally { retryingAnalysis.value = false }
+}
 
 async function refreshDataSilently() {
+  if (refreshing || disposed) return
+  refreshing = true
   try {
     const analysisData = await api(`/api/submissions/${route.params.submissionId}/analysis`, {
       token: token.value!,
     })
-    data.value = analysisData
+    if (!disposed) data.value = analysisData
   } catch (err) {
     console.error('Failed to silently refresh analysis:', err)
-  }
+  } finally { refreshing = false }
 }
 
 function connectWS() {
@@ -97,6 +127,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  disposed = true
+  if (analysisPoll) clearTimeout(analysisPoll)
   if (socket) {
     const s = socket
     socket = null
@@ -934,11 +966,14 @@ async function submitGrade() {
 }
 
 // Populate grade inputs when data is loaded
-import { watch } from 'vue'
-watch(data, (newVal) => {
-  if (newVal?.submission) {
-    score.value = newVal.submission.score
-    feedback.value = newVal.submission.feedback || ''
+watch([
+  () => data.value?.submission?.id,
+  () => data.value?.submission?.score,
+  () => data.value?.submission?.feedback,
+], ([id, savedScore, savedFeedback]) => {
+  if (id) {
+    score.value = savedScore
+    feedback.value = savedFeedback || ''
   }
 }, { immediate: true })
 
@@ -1025,10 +1060,10 @@ const backLabel = computed(() =>
     <!-- TAB 1: Analysis Report -->
     <div v-if="activeTab === 'report'" class="space-y-6">
       <!-- Hero Section: Score + Verdict -->
-      <div v-if="analysis" class="card p-8">
-        <div class="flex items-start gap-8">
+      <div v-if="analysis" class="card p-5 sm:p-8">
+        <div class="flex flex-col sm:flex-row items-start gap-5 sm:gap-8">
           <!-- Large Gauge -->
-          <div class="flex-shrink-0">
+          <div class="flex-shrink-0 self-center sm:self-start">
             <div class="score-gauge-lg">
               <svg width="160" height="160" viewBox="0 0 160 160">
                 <circle cx="80" cy="80" :r="gaugeRadius" fill="none" stroke="#E5E7EB" stroke-width="8"/>
@@ -1044,16 +1079,17 @@ const backLabel = computed(() =>
                 <div class="score-number" :style="{ color: flagColor(analysis.flagStatus || '') }">
                   {{ (analysis.flagiaScore ?? 0).toFixed(1) }}
                 </div>
-                <div class="score-label text-text-muted">Flagia Score</div>
+                <div class="score-label text-text-muted">{{ analysis.linguistic?.status === 'pending' ? t('linguistic.provisionalScore') : 'Flagia Score' }}</div>
               </div>
             </div>
           </div>
 
           <!-- Info -->
-          <div class="flex-1">
-            <div class="flex items-center gap-3 mb-3">
+          <div class="flex-1 min-w-0 w-full">
+            <div class="flex flex-wrap items-center gap-3 mb-3">
               <h1 class="text-xl font-bold text-text-primary">{{ $t('auto.m_d5ffaecc7150') }}</h1>
-              <span class="badge text-sm" :class="{
+              <span v-if="analysis.linguistic?.status === 'pending'" class="badge text-sm bg-primary/10 text-primary">{{ t('linguistic.status.pending') }}</span>
+              <span v-else class="badge text-sm" :class="{
                 'badge-green': analysis.flagStatus === 'GREEN',
                 'badge-amber': analysis.flagStatus === 'AMBER',
                 'badge-red': analysis.flagStatus === 'RED',
@@ -1065,7 +1101,7 @@ const backLabel = computed(() =>
             <div v-if="submission" class="text-sm text-text-secondary mb-1">
               <strong>{{ submission.assignmentTitle }}</strong>
             </div>
-            <div v-if="submission" class="flex items-center gap-4 text-xs text-text-muted mb-4">
+            <div v-if="submission" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-muted mb-4 break-all">
               <span>👤 {{ submission.studentName }}</span>
               <span>📧 {{ submission.studentEmail }}</span>
               <span v-if="submission.submittedAt">📅 {{ formatDate(submission.submittedAt) }}</span>
@@ -1074,18 +1110,27 @@ const backLabel = computed(() =>
             <!-- Verdict (staff only — the detail names which signals fired) -->
             <div v-if="isStaff" class="p-4 rounded-lg" :class="flagBg(analysis.flagStatus || '')">
               <p class="text-sm font-semibold mb-1" :style="{ color: flagColor(analysis.flagStatus || '') }">
-                {{ analysis.verdict }}
+                {{ analysis.linguistic?.deduction ? t('linguistic.verdict') : analysis.verdict }}
               </p>
               <p class="text-xs text-text-secondary leading-relaxed">
-                {{ analysis.verdictDetail }}
+                {{ analysis.linguistic?.deduction ? t('linguistic.verdictDetail', { points: analysis.linguistic.appliedDeduction }) : analysis.verdictDetail }}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 4 Metric Cards -->
-      <div v-if="isStaff && analysis?.components" class="grid grid-cols-2 gap-4">
+      <div v-if="!isStaff && analysis?.linguistic?.status === 'pending'" role="status" aria-live="polite"
+        class="card p-4 text-sm text-text-secondary flex items-center gap-3">
+        <span class="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden="true"></span>
+        {{ t('linguistic.studentPending') }}
+      </div>
+
+      <LinguisticPanel v-if="isStaff && analysis?.linguistic" :result="analysis.linguistic"
+        :final-score="analysis.flagiaScore" :retrying="retryingAnalysis" @retry="retryLinguisticAnalysis" />
+
+      <!-- Existing five metric cards -->
+      <div v-if="isStaff && analysis?.components" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div
           v-for="(comp, key) in analysis.components"
           :key="key"
@@ -1137,7 +1182,7 @@ const backLabel = computed(() =>
             <span class="font-mono font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
           <div v-for="(adj, i) in analysis.scoreAdjustments" :key="i" class="flex justify-between items-center text-flag-red">
-            <span>⚠️ {{ adj.label }}</span>
+            <span>⚠️ {{ adj.code === 'linguistic' || adj.label === '언어 분석 감점' ? t('linguistic.deduction') : adj.label }}</span>
             <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
 
@@ -1158,7 +1203,7 @@ const backLabel = computed(() =>
               {{ (analysis.flagiaScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }} </span>
           </div>
         </div>
-        <p class="text-xs text-text-muted mt-3 leading-relaxed"> {{ $t('auto.m_84df3ec2fbe9') }} </p>
+        <p class="text-xs text-text-muted mt-3 leading-relaxed">{{ t('linguistic.reconciliationHelp') }}</p>
       </div>
 
       <!-- Writing Timeline with custom hover tooltips (staff only) -->

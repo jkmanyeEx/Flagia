@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../database';
 import { authMiddleware, teacherOnly } from '../middleware/auth';
-import { runFlagiaAnalysis } from '../engine/flagiaEngine';
+import { initialAnalysis, isCurrentAnalysis, studentAnalysis, type AnalysisInput } from '../linguistic/pipeline';
+import { activeAnalysisStage, saveSubmissionAnalysis, scheduleSubmissionAnalysis } from '../services/submissionAnalysis';
 import { invalidateSubmissionLiveSession, notifySubmissionsUpdate } from '../websocket';
 import { finalizeSubmission } from '../services/submissionFinalizer';
 
@@ -118,7 +119,7 @@ router.put('/:id/submit', authMiddleware, async (req: Request, res: Response) =>
       message: result.outcome === 'already_finalized' ? '이미 제출 처리되었습니다' : '제출 완료',
       status: finalizedSubmission.status,
       alreadyFinalized: result.outcome === 'already_finalized',
-      analysis: result.analysis,
+      analysis: studentAnalysis(result.analysis),
       analysisError: result.analysisError,
     });
   } catch (err) {
@@ -185,18 +186,21 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
     // Exposing those — even via the network tab — would let them reverse-engineer
     // and game the engine. Staff (teacher/admin) get the full breakdown.
     const isStudent = user.role === 'STUDENT';
-    const trimForStudent = (a: any) => (a ? {
-      version: a.version,
-      flagiaScore: a.flagiaScore,
-      flagStatus: a.flagStatus,
-      sessionSummary: a.sessionSummary,
-    } : null);
+    const trimForStudent = studentAnalysis;
+    const inputSource = {
+      markdown: submission.final_markdown || '', template: submission.template_text || '',
+      mode: submission.mode, submittedAt: submission.submitted_at,
+    };
 
-    // If cached analysis exists and is up to date (version 4), return it
+    // Model, policy and source changes invalidate the analysis cache. Pending
+    // jobs are resumed on read after a server restart.
     if (submission.analysis_json) {
       try {
         const cached = JSON.parse(submission.analysis_json);
-        if (cached && cached.version === 4) {
+        const stage = activeAnalysisStage(req.params.id);
+        if (cached && isCurrentAnalysis(cached, inputSource)
+          && (cached.linguistic.status !== 'pending' || stage)) {
+          if (stage) cached.linguistic.stage = stage;
           res.json({
             submission: {
               id: submission.id,
@@ -239,22 +243,15 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
       }
     }
 
-    const analysis = runFlagiaAnalysis(
-      allEvents,
-      submission.final_markdown || '',
-      submission.template_text || '',
-      submission.mode,
-      submission.submitted_at
-    );
-
-    // Update session count in summary
-    analysis.sessionSummary.sessionCount = sessions.length;
-
-    // Cache it
-    await pool.query(
-      'UPDATE submissions SET analysis_json = ? WHERE id = ?',
-      [JSON.stringify(analysis), req.params.id]
-    );
+    const input: AnalysisInput = { ...inputSource, events: allEvents, sessionCount: sessions.length,
+      assignmentId: submission.assignment_id, studentId: submission.student_id };
+    const analysis = initialAnalysis(input);
+    if (['SUBMITTED', 'FORCE_CLOSED'].includes(submission.status)) {
+      await saveSubmissionAnalysis(req.params.id, analysis, input.markdown);
+      if (analysis.linguistic?.status === 'pending') scheduleSubmissionAnalysis(req.params.id, input);
+    } else {
+      analysis.linguistic = { ...analysis.linguistic!, status: 'unevaluated', stage: undefined, reason: 'not_submitted' };
+    }
 
     res.json({
       submission: {
@@ -279,6 +276,23 @@ router.get('/:id/analysis', authMiddleware, async (req: Request, res: Response) 
   } catch (err) {
     console.error('Analysis error:', err);
     res.status(500).json({ error: '분석 데이터를 불러올 수 없습니다' });
+  }
+});
+
+// Staff can retry a failed/local-model analysis without resubmitting the work.
+router.post('/:id/analysis/retry', authMiddleware, teacherOnly, async (req: Request, res: Response) => {
+  try {
+    if (activeAnalysisStage(req.params.id)) { res.status(202).json({ status: 'pending' }); return; }
+    const [rows] = await pool.query('SELECT status FROM submissions WHERE id = ?', [req.params.id]);
+    const submission = (rows as any[])[0];
+    if (!submission) { res.status(404).json({ error: '제출물을 찾을 수 없습니다' }); return; }
+    if (!['SUBMITTED', 'FORCE_CLOSED'].includes(submission.status)) {
+      res.status(409).json({ error: '제출 완료 후 분석할 수 있습니다' }); return;
+    }
+    await pool.query('UPDATE submissions SET analysis_json = NULL WHERE id = ?', [req.params.id]);
+    res.status(202).json({ status: 'queued' });
+  } catch {
+    res.status(500).json({ error: '분석을 다시 시작할 수 없습니다' });
   }
 });
 

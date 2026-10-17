@@ -5,10 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.finalizeSubmission = finalizeSubmission;
 const database_1 = __importDefault(require("../database"));
-const flagiaEngine_1 = require("../engine/flagiaEngine");
-function errorMessage(error) {
-    return error instanceof Error ? error.message : '알 수 없는 분석 오류';
-}
+const pipeline_1 = require("../linguistic/pipeline");
+const submissionAnalysis_1 = require("./submissionAnalysis");
 /**
  * Atomically claims an IN_PROGRESS submission, then runs the shared Flagia
  * analysis pipeline. The status predicate makes this safe when a student's
@@ -48,32 +46,25 @@ async function finalizeSubmission(options) {
         }
     }
     try {
-        const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, submission.final_markdown || '', submission.template_text || '', submission.mode, submission.submitted_at);
-        await database_1.default.query(`UPDATE submissions SET
-        flagia_score = ?, flag_status = ?,
-        coefficient_of_variation = ?, revision_ratio = ?,
-        total_paste_count = ?, total_blur_duration = ?,
-        analysis_json = ?
-       WHERE id = ? AND status = ?`, [
-            analysis.flagiaScore,
-            analysis.flagStatus,
-            analysis.coefficientOfVariation,
-            analysis.revisionRatio,
-            analysis.totalPasteCount,
-            analysis.totalBlurDuration,
-            JSON.stringify(analysis),
-            options.submissionId,
-            options.status,
-        ]);
+        const input = {
+            events: allEvents, markdown: submission.final_markdown || '',
+            template: submission.template_text || '', mode: submission.mode,
+            submittedAt: submission.submitted_at, sessionCount: sessionRows.length,
+            assignmentId: submission.assignment_id, studentId: submission.student_id,
+        };
+        const analysis = (0, pipeline_1.initialAnalysis)(input);
+        await (0, submissionAnalysis_1.saveSubmissionAnalysis)(options.submissionId, analysis, input.markdown);
+        if (analysis.linguistic?.status === 'pending')
+            (0, submissionAnalysis_1.scheduleSubmissionAnalysis)(options.submissionId, input);
         return { outcome: 'finalized', submission, analysis };
     }
-    catch (error) {
-        console.error('Flagia Analysis Engine Error:', error);
+    catch {
+        console.error('Flagia submission analysis could not be saved');
         return {
             outcome: 'finalized',
             submission,
             analysis: null,
-            analysisError: errorMessage(error),
+            analysisError: '분석 결과를 저장할 수 없습니다. 제출은 완료되었습니다.',
         };
     }
 }

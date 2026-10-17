@@ -25,6 +25,9 @@ echo "[deploy] Installing production backend dependencies"
   npm ci --omit=dev --no-audit --no-fund
 )
 
+echo "[deploy] Preparing private language-analysis runtime"
+bash "$release_dir/scripts/prepare-linguistic-runtime.sh" "$release_dir"
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
@@ -111,7 +114,7 @@ if [[ "$healthy" != "true" ]]; then
       run_pm2 save
     )
   fi
-  run_pm2 logs --lines 80 --nostream
+  run_pm2 list
   exit 1
 fi
 
@@ -119,6 +122,8 @@ echo "[deploy] Installing backup and monitoring timers"
 "$APP_HOME/current/ops/install-operations.sh"
 
 echo "[deploy] Regrading completed submissions with the current engine"
+echo "[deploy] Backing up database before regrading"
+"$APP_HOME/current/ops/backup-mysql.sh"
 (
   cd "$APP_HOME/current/flagia-backend"
   /usr/local/bin/node --env-file="$ENV_FILE" dist/regrade.js

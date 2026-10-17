@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "featureVersion": "kiwi-prose-v1",
+  "encoder": "klue/roberta-small",
+  "encoderRevision": "b6b4c36d827e0293ae2fcf04d527072f10a23064",
+  "datasetSha256": "2cec81c53556fda7cbd73838c1802617e4dbc4edfc5318694e382bf012b70f2f",
+  "trainedAt": "2026-10-17T17:09:05Z",
+  "validation": "provisional",
+  "scope": "ko-prose-200-12000",
+  "calibrationMethod": "human-document-empirical-quantile-unverified",
+  "targetReviewFpr": 0.01,
+  "targetStrongFpr": 0.001,
+  "thresholds": {
+    "aReview": 0.7336774084791118,
+    "aStrong": 0.7919893696824093,
+    "bReview": 0.9881512474529175
+  },
+  "calibrationHumanCount": 29,
+  "audit": {
+    "humanCount": 34,
+    "aiCount": 112,
+    "falsePositiveRate": 0.0,
+    "detectionRate": 0.5892857142857143,
+    "deductions": {
+      "0": 80,
+      "35": 3,
+      "65": 63
+    },
+    "featureAuRoc": 0.96875,
+    "contextAuRoc": 0.9984243697478992,
+    "byGenerator": {
+      "gpt-4o-2024-05-13": {
+        "humanCount": 34,
+        "aiCount": 34,
+        "falsePositiveRate": 0.0,
+        "detectionRate": 0.8823529411764706,
+        "deductions": {
+          "0": 38,
+          "35": 1,
+          "65": 29
+        }
+      },
+      "llama3.1:70b": {
+        "humanCount": 34,
+        "aiCount": 17,
+        "falsePositiveRate": 0.0,
+        "detectionRate": 0.29411764705882354,
+        "deductions": {
+          "0": 46,
+          "65": 5
+        }
+      },
+      "qwen2:72b-instruct": {
+        "humanCount": 34,
+        "aiCount": 30,
+        "falsePositiveRate": 0.0,
+        "detectionRate": 0.23333333333333334,
+        "deductions": {
+          "0": 57,
+          "65": 7
+        }
+      },
+      "solar-1-mini-chat": {
+        "humanCount": 34,
+        "aiCount": 31,
+        "falsePositiveRate": 0.0,
+        "detectionRate": 0.7741935483870968,
+        "deductions": {
+          "0": 41,
+          "65": 22,
+          "35": 2
+        }
+      }
+    }
+  },
+  "modelVersion": "ko-prose-692e52322b500fba",
+  "training": {
+    "seed": 42,
+    "epochs": 3,
+    "batchSize": 4,
+    "learningRate": 2e-05,
+    "trainableLayers": "last-two-plus-classification-head"
+  },
+  "splitCounts": {
+    "train": {
+      "total": 234,
+      "human": 118
+    },
+    "calibration": {
+      "total": 128,
+      "human": 29
+    },
+    "test": {
+      "total": 146,
+      "human": 34
+    }
+  },
+  "spacingControl": {
+    "control": "held-out-human-spacing-correction",
+    "count": 34,
+    "flagged": 0,
+    "durationSec": 10.77
+  },
+  "falsePositiveUpper95": 0.08433964335062538,
+  "evaluationScope": "text-branch-only; no real writing sessions; no human paraphrase audit",
+  "pipelineVersion": 5
+}

@@ -8,6 +8,8 @@ import submissionsRouter from './routes/submissions';
 import classroomsRouter from './routes/classrooms';
 import pool from './database';
 import { ensureSchema } from './migrate';
+import { ANALYSIS_VERSION } from './engine/flagiaEngine';
+import { linguisticModelVersion } from './linguistic/runtime';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -56,7 +58,10 @@ app.use((_req, res, next) => {
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
+  res.json({ status: 'ok', timestamp: Date.now(),
+    release: process.env.FLAGIA_RELEASE_ID || 'development', analysisVersion: ANALYSIS_VERSION,
+    linguistic: { modelVersion: linguisticModelVersion() },
+  });
 });
 
 // Server time sync endpoint

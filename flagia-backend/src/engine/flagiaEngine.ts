@@ -1,3 +1,7 @@
+import type { LinguisticResult, RevisionAnalysis } from '../linguistic/types';
+
+export const ANALYSIS_VERSION = 5;
+
 /**
  * Flagia Analysis Engine v2.0
  * 
@@ -12,13 +16,13 @@
  * - Natural language verdict
  */
 
-interface TelemetryEvent {
+export interface TelemetryEvent {
   seq: number;
   timestamp: number;
   iki: number;
   // `leave`/`reconnect` are server-injected markers bounding a period when the
   // student had left the site; the gap between them is excluded from writing time.
-  type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect' | 'snapshot';
+  type: 'keydown' | 'keyup' | 'paste' | 'blur' | 'focus' | 'toolbar_action' | 'leave' | 'reconnect' | 'snapshot' | 'document_frame';
   meta: {
     key?: string;
     cursorPosition?: number;
@@ -30,6 +34,15 @@ interface TelemetryEvent {
     // 'snapshot' events carry the editor's plain text at capture time (used for
     // replay and content-divergence detection).
     text?: string;
+    // v3 frames support replay and stable semantic revision reconstruction.
+    // Frame event counts/IKI never count as keystrokes in the five metrics.
+    v?: number;
+    from?: number;
+    to?: number;
+    insertedText?: string;
+    selectionLength?: number;
+    textLength?: number;
+    baseText?: string;
   };
   currentHash: string;
 }
@@ -66,14 +79,16 @@ interface SessionSummary {
   averageWPM: number;
 }
 
-interface AnalysisResult {
+export interface AnalysisResult {
   version?: number;
   flagiaScore: number;
   // Weighted sum of the 5 components BEFORE any structural penalties. The
   // component cards add up to this; the final flagiaScore = baseScore + the
   // (negative) scoreAdjustments below.
   baseScore?: number;
-  scoreAdjustments?: { label: string; points: number }[];
+  scoreAdjustments?: { label: string; points: number; code?: 'linguistic' }[];
+  linguistic?: LinguisticResult;
+  sourceFingerprint?: string;
   // Breakdown of the copy-typing (transcription) penalty for the analysis UI.
   transcription?: {
     basis: 'none' | 'divergence' | 'rr' | 'template';
@@ -145,6 +160,11 @@ const MODE_THRESHOLDS: Record<string, { green: number; amber: number }> = {
   RESEARCH: { green: 60, amber: 35 },
   CREATIVE: { green: 55, amber: 30 },
 };
+
+export function flagStatusForScore(score: number, mode: string): 'GREEN' | 'AMBER' | 'RED' {
+  const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
+  return score >= thresholds.green ? 'GREEN' : score >= thresholds.amber ? 'AMBER' : 'RED';
+}
 
 /**
  * Compute Coefficient of Variation for IKI values
@@ -804,7 +824,8 @@ export function runFlagiaAnalysis(
   finalMarkdown: string,
   templateText: string,
   mode: string,
-  submittedAt?: Date | string
+  submittedAt?: Date | string,
+  semanticRevision?: RevisionAnalysis,
 ): AnalysisResult {
   // Deduplicate consecutive keydown events of the exact same key that occur within 15ms
   const cleanedEvents: TelemetryEvent[] = [];
@@ -1087,7 +1108,14 @@ export function runFlagiaAnalysis(
     .filter(t => t.trim().length > 0);
   const hasSnapshots = snapshotTexts.length >= 2;
   // Genuine-reworking divergence (typo/IME churn filtered out — Korean-safe).
-  const divergenceRatio = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
+  const lexicalDivergence = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
+  // Stable changes to negation/quantification/numbers supplement lexical edit
+  // distance. They cannot create a new penalty or certify human authorship.
+  const meaningRatio = semanticRevision?.status === 'evaluated'
+    && Number.isFinite(semanticRevision.meaningChangeRatio)
+    ? Math.max(0, Math.min(.25, semanticRevision.meaningChangeRatio)) : 0;
+  const divergenceRatio = lexicalDivergence >= 0
+    ? Math.max(lexicalDivergence, meaningRatio) : lexicalDivergence;
 
   // Fuzzy template match: share of the final text's n-grams contained in the
   // provided template (typo-tolerant). High ⇒ the student largely reproduced the
@@ -1187,6 +1215,10 @@ export function runFlagiaAnalysis(
         value: divergenceRatio >= 0 ? `${(divergenceRatio * 100).toFixed(1)}%` : '스냅샷 없음',
       },
       { label: '수정 비율 (RR)', value: revisionRatio.toFixed(2) },
+      ...(semanticRevision ? [
+        { label: '안정된 의미 수정 후보', value: String(semanticRevision.meaningEdits) },
+        { label: '의미 변화 보완 비율', value: `${(meaningRatio * 100).toFixed(1)}%` },
+      ] : []),
       {
         label: 'RR 대비 기대 발산도',
         value: correlationApplicable && rrDivergence.eligible
@@ -1225,6 +1257,7 @@ export function runFlagiaAnalysis(
 
   // ── Edge case: if no events at all, flag as RED ──
   if (events.length === 0) {
+    if (flagiaScore > 0) scoreAdjustments.push({ label: '입력 기록 없음', points: -flagiaScore });
     flagiaScore = 0;
     flagStatus = 'RED';
   }
@@ -1313,7 +1346,7 @@ export function runFlagiaAnalysis(
   }
 
   return {
-    version: 4,
+    version: ANALYSIS_VERSION,
     flagiaScore,
     baseScore,
     scoreAdjustments,

@@ -18,7 +18,7 @@ jobs:
     name: Build and deploy to EC2
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     steps:
       - name: Check out source
@@ -32,32 +32,6 @@ jobs:
           cache-dependency-path: |
             flagia-frontend/package-lock.json
             flagia-backend/package-lock.json
-
-      - name: Build frontend
-        working-directory: flagia-frontend
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-
-      - name: Build backend
-        working-directory: flagia-backend
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-
-      - name: Package release
-        run: |
-          tar -czf "${GITHUB_SHA}.tar.gz" \
-            ecosystem.config.cjs \
-            pm2_startup.sh \
-            scripts \
-            ops \
-            flagia-frontend/dist \
-            flagia-backend/dist \
-            flagia-backend/package.json \
-            flagia-backend/package-lock.json \
-            flagia-backend/mysql_dump.sql \
-            flagia-backend/migrations
 
       - name: Configure SSH
         env:
@@ -74,6 +48,74 @@ jobs:
           printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
 
+      - name: Inspect server Python compatibility
+        id: server
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          remote_user="${EC2_USER:-ubuntu}"
+          version="$(ssh -o BatchMode=yes -o ConnectTimeout=20 -i "$HOME/.ssh/flagia_ec2" "$remote_user@$EC2_HOST" \
+            'python3 -c "import sys; print(str(sys.version_info.major) + chr(46) + str(sys.version_info.minor))"')"
+          [[ "$version" =~ ^3\.[0-9]+$ ]]
+          echo "python=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up compatible Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ steps.server.outputs.python }}
+          cache: pip
+          cache-dependency-path: flagia-backend/linguistic/requirements.txt
+
+      - name: Build frontend
+        working-directory: flagia-frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run test:replay
+
+      - name: Build backend
+        working-directory: flagia-backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run test:engine
+          npm run test:linguistic
+          node dist/telemetryValidation_test.js
+
+      - name: Train and verify private Linux model bundle
+        working-directory: flagia-backend
+        env:
+          HF_HOME: ${{ github.workspace }}/flagia-backend/.linguistic-local/hf-cache
+          HF_HUB_DISABLE_XET: '1'
+          TOKENIZERS_PARALLELISM: 'false'
+        run: |
+          python -m venv .venv-linguistic
+          .venv-linguistic/bin/python -m pip install 'torch>=2.6,<3' --index-url https://download.pytorch.org/whl/cpu
+          .venv-linguistic/bin/python -m pip install -r linguistic/requirements.txt
+          .venv-linguistic/bin/python linguistic/prepare_data.py
+          .venv-linguistic/bin/python linguistic/train.py --data .linguistic-local/katfish-essay.jsonl --output .linguistic-local/model
+          .venv-linguistic/bin/python -m pip freeze > linguistic/runtime-lock.txt
+          .venv-linguistic/bin/python -m unittest discover -s linguistic -p 'test_*.py' -v
+          npm run test:linguistic:runtime
+          npm run test:linguistic:submission
+
+      - name: Package release
+        run: |
+          tar --exclude='__pycache__' -czf "${GITHUB_SHA}.tar.gz" \
+            ecosystem.config.cjs \
+            pm2_startup.sh \
+            scripts \
+            ops \
+            flagia-frontend/dist \
+            flagia-backend/dist \
+            flagia-backend/linguistic \
+            flagia-backend/.linguistic-local/model \
+            flagia-backend/package.json \
+            flagia-backend/package-lock.json \
+            flagia-backend/mysql_dump.sql \
+            flagia-backend/migrations
+
       - name: Upload release
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -85,18 +127,37 @@ jobs:
           scp -i "$HOME/.ssh/flagia_ec2" "${GITHUB_SHA}.tar.gz" \
             "$remote_user@$EC2_HOST:/home/ubuntu/Flagia/incoming/${GITHUB_SHA}.tar.gz"
 
-      - name: Activate release
+      - name: Activate release and regrade finalized submissions
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -o pipefail
+          remote_user="${EC2_USER:-ubuntu}"
+          activation_log="$(mktemp)"
+          trap 'rm -f "$activation_log"' EXIT
+          ssh -i "$HOME/.ssh/flagia_ec2" "$remote_user@$EC2_HOST" \
+            "bash -s -- '$GITHUB_SHA'" < scripts/receive-deploy.sh \
+            | tee "$activation_log"
+          if grep -Fq '[deploy] Regrade failed; application remains online.' "$activation_log"; then
+            echo "Regrading finalized submissions failed." >&2
+            exit 1
+          fi
+
+      - name: Verify live analysis and clean up fixture data
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           remote_user="${EC2_USER:-ubuntu}"
           ssh -i "$HOME/.ssh/flagia_ec2" "$remote_user@$EC2_HOST" \
-            "bash -s -- '$GITHUB_SHA'" < scripts/receive-deploy.sh
+            'cd /home/ubuntu/Flagia/current/flagia-backend && FLAGIA_ALLOW_DEPLOYMENT_SMOKE=1 /usr/local/bin/node --env-file=/home/ubuntu/Flagia/shared/.env dist/deploymentSmoke.js'
 
       - name: Verify public endpoints
         run: |
           curl --fail --silent --show-error --retry 5 --retry-delay 3 \
             https://api.flagia.kr/api/health
+          curl --fail --silent --show-error https://api.flagia.kr/api/health \
+            | jq -e --arg release "$GITHUB_SHA" '.release == $release and .analysisVersion == 5 and .linguistic.modelVersion != "unavailable"'
           curl --fail --silent --show-error --retry 5 --retry-delay 3 \
             https://flagia.kr/ >/dev/null

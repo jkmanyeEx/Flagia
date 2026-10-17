@@ -1,19 +1,10 @@
 "use strict";
-/**
- * Flagia Analysis Engine v2.0
- *
- * Computes human-writing confidence metrics from keystroke telemetry:
- * - IKI Coefficient of Variation (Cv = σ/μ)
- * - Revision Ratio (totalKeystrokes / finalTextLength)
- * - Paste Detection (excluding legitimate CB quotes)
- * - Blur Duration accumulation
- * - Composite Flagia Score (0-100)
- * - Per-component scores with breakdown
- * - Writing timeline with intensity buckets
- * - Natural language verdict
- */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.ANALYSIS_VERSION = void 0;
+exports.flagStatusForScore = flagStatusForScore;
+exports.calculateRrDivergenceCorrelation = calculateRrDivergenceCorrelation;
 exports.runFlagiaAnalysis = runFlagiaAnalysis;
+exports.ANALYSIS_VERSION = 5;
 // Keys that are not typed content and should be excluded from rhythm analysis.
 // NOTE: 'Process'/'Unidentified'/'Dead' are NOT excluded — Korean (and other IME)
 // input fires keydown with key='Process' during composition. Those are REAL
@@ -45,6 +36,10 @@ const MODE_THRESHOLDS = {
     RESEARCH: { green: 60, amber: 35 },
     CREATIVE: { green: 55, amber: 30 },
 };
+function flagStatusForScore(score, mode) {
+    const thresholds = MODE_THRESHOLDS[mode] || MODE_THRESHOLDS.STANDARD;
+    return score >= thresholds.green ? 'GREEN' : score >= thresholds.amber ? 'AMBER' : 'RED';
+}
 /**
  * Compute Coefficient of Variation for IKI values
  * Cv = σ / μ (with division-by-zero guard)
@@ -655,10 +650,64 @@ function computeDivergence(snapshotTexts, finalText) {
     }
     return genuine / finalSet.size;
 }
+// ── RR/divergence correlation ──
+// RR measures how much editing a student claims through extra key volume, while
+// divergence measures how much genuinely different wording those edits produced.
+// These signals must move together: the more revision activity RR claims, the
+// more abandoned/reworded content should be visible in the snapshots.
+//
+// The old independent gate (RR >= 1.25 && divergence < 5%) had a hard cliff.
+// Start the tolerance slightly higher at 7%, then raise the expected divergence
+// smoothly with RR. Risk tapers continuously to zero at the expectation rather
+// than switching the whole penalty on/off at one fixed percentage.
+const CORRELATION_RR_START = 1.25;
+const CORRELATION_RR_FULL = 2.25;
+const BASE_EXPECTED_DIVERGENCE = 0.07;
+const MAX_EXPECTED_DIVERGENCE = 0.18;
+function clamp01(value) {
+    return Math.max(0, Math.min(1, value));
+}
+function calculateRrDivergenceCorrelation(revisionRatio, divergenceRatio) {
+    const eligible = Number.isFinite(revisionRatio) &&
+        Number.isFinite(divergenceRatio) &&
+        revisionRatio >= CORRELATION_RR_START &&
+        divergenceRatio >= 0;
+    if (!eligible) {
+        return {
+            eligible: false,
+            claimedRevision: 0,
+            expectedDivergence: 0,
+            divergenceShortfall: 0,
+            risk: 0,
+            actingBoost: 0,
+        };
+    }
+    const claimedRevision = clamp01((revisionRatio - CORRELATION_RR_START) /
+        (CORRELATION_RR_FULL - CORRELATION_RR_START));
+    const expectedDivergence = BASE_EXPECTED_DIVERGENCE +
+        (MAX_EXPECTED_DIVERGENCE - BASE_EXPECTED_DIVERGENCE) * claimedRevision;
+    const divergenceShortfall = clamp01((expectedDivergence - divergenceRatio) / expectedDivergence);
+    // Square-root scaling makes a meaningful mismatch visible without creating a
+    // discontinuity near the boundary. RR strengthens the signal, but divergence
+    // shortfall remains the primary evidence.
+    const rrConfidence = 0.65 + 0.35 * claimedRevision;
+    const risk = clamp01(Math.sqrt(divergenceShortfall) * rrConfidence);
+    // Extra fake-edit weight is derived from the same joint risk, so it also
+    // approaches zero smoothly instead of adding a fixed penalty at the boundary.
+    const actingBoost = clamp01(risk * (0.12 + 0.18 * claimedRevision));
+    return {
+        eligible: true,
+        claimedRevision,
+        expectedDivergence,
+        divergenceShortfall,
+        risk,
+        actingBoost,
+    };
+}
 /**
  * Main analysis function
  */
-function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submittedAt) {
+function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submittedAt, semanticRevision) {
     // Deduplicate consecutive keydown events of the exact same key that occur within 15ms
     const cleanedEvents = [];
     let lastKdTime = 0;
@@ -915,7 +964,14 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
         .filter(t => t.trim().length > 0);
     const hasSnapshots = snapshotTexts.length >= 2;
     // Genuine-reworking divergence (typo/IME churn filtered out — Korean-safe).
-    const divergenceRatio = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
+    const lexicalDivergence = hasSnapshots ? computeDivergence(snapshotTexts, plainText) : -1;
+    // Stable changes to negation/quantification/numbers supplement lexical edit
+    // distance. They cannot create a new penalty or certify human authorship.
+    const meaningRatio = semanticRevision?.status === 'evaluated'
+        && Number.isFinite(semanticRevision.meaningChangeRatio)
+        ? Math.max(0, Math.min(.25, semanticRevision.meaningChangeRatio)) : 0;
+    const divergenceRatio = lexicalDivergence >= 0
+        ? Math.max(lexicalDivergence, meaningRatio) : lexicalDivergence;
     // Fuzzy template match: share of the final text's n-grams contained in the
     // provided template (typo-tolerant). High ⇒ the student largely reproduced the
     // prompt/template by hand.
@@ -929,6 +985,7 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     let transcriptionSeverity = 0;
     let actingFactor = 0;
     let detectBasis = 'none';
+    const rrDivergence = calculateRrDivergenceCorrelation(revisionRatio, divergenceRatio);
     if (lowPaste) {
         if (substantial && templateSim > 0.8 && isSubstantiallyTyped) {
             // 1) Reproduced the provided template by hand (even with minor changes).
@@ -936,23 +993,15 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             detectBasis = 'template';
         }
         else if (hasSnapshots && actingEligible) {
-            // 2) FAKE-EDIT "acting" (the robust catch): the student appears to revise a
-            //    lot (high RR ⇒ lots of keystrokes beyond the final length) yet the
-            //    content barely DIVERGED from the final (≈ nothing was reworded/abandoned).
-            //    Genuine revision at this RR would have produced lots of divergence;
-            //    delete-and-retype-the-same disguise produces ~none. We deliberately do
-            //    NOT penalize low divergence alone — a clean honest writer who composes
-            //    linearly also has low divergence and must not be flagged. Only the
-            //    high-RR + low-divergence COMBINATION is unambiguous deception.
-            if (revisionRatio >= 1.25 && divergenceRatio >= 0 && divergenceRatio < 0.05) {
+            // 2) FAKE-EDIT "acting": compare claimed revision volume (RR) with the
+            //    genuinely abandoned/reworded content visible in snapshots. Expected
+            //    divergence rises with RR, and the penalty scales continuously with the
+            //    shortfall. This catches delete-and-retype disguise without a fixed 5%
+            //    escape boundary.
+            if (rrDivergence.risk > 0) {
                 detectBasis = 'divergence';
-                const divShort = (0.05 - divergenceRatio) / 0.05; // 0..1 (how empty the "edits" were)
-                const claimed = Math.min(1, (revisionRatio - 1.25) / 1.0); // RR 1.25→0 … 2.25→1
-                // Severity scales with how far past the 1.25 boundary the RR is, so the
-                // borderline (1.25) gets a moderate hit and blatant fake-editing is hammered.
-                transcriptionSeverity = Math.min(1, 0.25 + divShort * 0.35 + claimed * 0.4);
-                // "More acting penalty": the busier the fake editing, the bigger the boost.
-                actingFactor = Math.min(0.5, 0.1 + (revisionRatio - 1.25) * 0.3);
+                transcriptionSeverity = rrDivergence.risk;
+                actingFactor = rrDivergence.actingBoost;
             }
         }
         else if (substantial && !hasSnapshots && revisionRatio >= 1.0 && revisionRatio < 1.35) {
@@ -972,7 +1021,13 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             penalized = Math.min(penalized, transcriptionSeverity > 0.85 ? 38 : 48);
         }
         else if (detectBasis === 'divergence') {
-            if (sev > 0.7)
+            // Strong joint evidence is an explicit RED classification. Requiring both
+            // correlation risk >= 40% and RR >= 1.40 prevents a barely eligible,
+            // otherwise linear writer from becoming RED on divergence alone.
+            if (rrDivergence.risk >= 0.4 && revisionRatio >= 1.4) {
+                penalized = Math.min(penalized, 39);
+            }
+            else if (sev > 0.7)
                 penalized = Math.min(penalized, 42);
             else if (sev > 0.4)
                 penalized = Math.min(penalized, 55);
@@ -996,6 +1051,10 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
             flagiaScore = penalized;
         }
     }
+    const correlationApplicable = lowPaste &&
+        hasSnapshots &&
+        actingEligible &&
+        detectBasis !== 'template';
     // Per-section breakdown for the analysis UI's "minus" area.
     const basisKo = {
         none: '해당 없음', divergence: '내용 발산도(스냅샷)', rr: '수정 비율(스냅샷 없음)', template: '제시문 일치',
@@ -1011,6 +1070,30 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
                 value: divergenceRatio >= 0 ? `${(divergenceRatio * 100).toFixed(1)}%` : '스냅샷 없음',
             },
             { label: '수정 비율 (RR)', value: revisionRatio.toFixed(2) },
+            ...(semanticRevision ? [
+                { label: '안정된 의미 수정 후보', value: String(semanticRevision.meaningEdits) },
+                { label: '의미 변화 보완 비율', value: `${(meaningRatio * 100).toFixed(1)}%` },
+            ] : []),
+            {
+                label: 'RR 대비 기대 발산도',
+                value: correlationApplicable && rrDivergence.eligible
+                    ? `${(rrDivergence.expectedDivergence * 100).toFixed(1)}%`
+                    : '해당 없음',
+            },
+            {
+                label: 'RR–발산도 불일치 위험',
+                value: correlationApplicable && rrDivergence.eligible
+                    ? `${Math.round(rrDivergence.risk * 100)}%`
+                    : '해당 없음',
+            },
+            {
+                label: '강한 상관 위험 RED 기준',
+                value: correlationApplicable && rrDivergence.eligible
+                    ? (rrDivergence.risk >= 0.4 && revisionRatio >= 1.4
+                        ? '충족'
+                        : '미충족')
+                    : '해당 없음',
+            },
             { label: '제시문 일치율', value: `${Math.round(templateSim * 100)}%` },
             { label: '편집 위장(acting) 가중', value: actingFactor > 0 ? `+${actingFactor.toFixed(2)}` : '없음' },
             { label: '심각도', value: Math.min(1, transcriptionSeverity + actingFactor).toFixed(2) },
@@ -1029,6 +1112,8 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     }
     // ── Edge case: if no events at all, flag as RED ──
     if (events.length === 0) {
+        if (flagiaScore > 0)
+            scoreAdjustments.push({ label: '입력 기록 없음', points: -flagiaScore });
         flagiaScore = 0;
         flagStatus = 'RED';
     }
@@ -1100,11 +1185,14 @@ function runFlagiaAnalysis(rawEvents, finalMarkdown, templateText, mode, submitt
     };
     // ── Verdict ──
     let { verdict, verdictDetail } = generateVerdict(flagiaScore, flagStatus, { cv: cvScore, rr: rrScore, paste: pasteScore, blur: blurScore, time: timeScore }, mode);
-    if (transcriptionSeverity > 0.4) {
+    if (detectBasis === 'divergence' && transcriptionSeverity > 0) {
+        verdictDetail += ` ⚠️ 수정 비율(RR ${revisionRatio.toFixed(2)})에 비해 실제 내용 발산도(${(divergenceRatio * 100).toFixed(1)}%)가 기대치(${(rrDivergence.expectedDivergence * 100).toFixed(1)}%)보다 낮습니다. 삭제·재입력으로 수정량을 부풀렸지만 실질적인 재작성은 적은 편집 위장 패턴이 의심됩니다. 직접 확인이 필요합니다.`;
+    }
+    else if (transcriptionSeverity > 0.4) {
         verdictDetail += ` ⚠️ 충분한 분량의 글이 거의 수정 없이 한 번에 입력되었습니다(수정 비율 ${revisionRatio.toFixed(2)}). 타이핑 리듬은 사람과 유사하더라도, 이는 외부 화면의 글을 보며 손으로 그대로 옮겨 쓴(베껴 쓰기) 경우의 전형적 패턴입니다. 직접 확인이 필요합니다.`;
     }
     return {
-        version: 3,
+        version: exports.ANALYSIS_VERSION,
         flagiaScore,
         baseScore,
         scoreAdjustments,

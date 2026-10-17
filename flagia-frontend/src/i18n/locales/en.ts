@@ -1,7 +1,9 @@
 import { autoEn } from '../generated'
 import { runtimeEn } from '../runtime-generated'
+import { linguisticEn } from '../linguistic'
 
 export default {
+  linguistic: linguisticEn,
   auto: autoEn,
   runtime: runtimeEn,
   common: {

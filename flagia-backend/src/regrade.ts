@@ -3,7 +3,9 @@
  * Usage: node dist/regrade.js
  */
 import pool from './database';
-import { runFlagiaAnalysis } from './engine/flagiaEngine';
+import { completeAnalysis } from './linguistic/pipeline';
+import { linguisticRuntime } from './linguistic/runtime';
+import { saveSubmissionAnalysis } from './services/submissionAnalysis';
 
 async function regrade() {
   console.log('🔄 Fetching submitted submissions...');
@@ -39,47 +41,32 @@ async function regrade() {
       }
 
       // Run updated analysis
-      const analysis = runFlagiaAnalysis(
-        allEvents,
-        sub.final_markdown || '',
-        sub.template_text || '',
-        sub.mode,
-        sub.submitted_at
-      );
+      const analysis = await completeAnalysis({
+        events: allEvents, markdown: sub.final_markdown || '', template: sub.template_text || '',
+        mode: sub.mode, submittedAt: sub.submitted_at, sessionCount: (sessionRows as any[]).length,
+      }, () => {});
+      if (analysis.linguistic?.status === 'unevaluated' &&
+          ['model_unavailable', 'inference_failed', 'timeout', 'busy', 'worker_exited', 'model_changed', 'invalid_worker_result'].includes(analysis.linguistic.reason || '')) {
+        throw new Error('language_analysis_failed');
+      }
+      await saveSubmissionAnalysis(sub.id, analysis, sub.final_markdown || '');
 
-      // Update DB
-      await pool.query(
-        `UPDATE submissions SET
-           flagia_score = ?, flag_status = ?,
-           coefficient_of_variation = ?, revision_ratio = ?,
-           total_paste_count = ?, total_blur_duration = ?,
-           analysis_json = ?
-         WHERE id = ?`,
-        [
-          analysis.flagiaScore,
-          analysis.flagStatus,
-          analysis.coefficientOfVariation,
-          analysis.revisionRatio,
-          analysis.totalPasteCount,
-          analysis.totalBlurDuration,
-          JSON.stringify(analysis),
-          sub.id,
-        ]
-      );
-
-      console.log(`  ✅ ${sub.id.slice(0, 8)}… | ${analysis.flagiaScore.toFixed(1)} (${analysis.flagStatus}) | events: ${allEvents.length}`);
       success++;
-    } catch (err: any) {
-      console.error(`  ❌ ${sub.id.slice(0, 8)}… | Error: ${err.message}`);
+      console.log(`  Regraded ${success + failed}/${submissions.length}`);
+    } catch {
+      console.error('Analysis failed; previous result preserved');
       failed++;
     }
   }
 
   console.log(`\n🏁 Done. ${success} regraded, ${failed} failed.`);
-  process.exit(0);
+  if (failed) process.exitCode = 1;
 }
 
-regrade().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
+regrade().catch(() => {
+  console.error('Regrading could not be completed');
+  process.exitCode = 1;
+}).finally(async () => {
+  linguisticRuntime.close();
+  await pool.end();
 });

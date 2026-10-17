@@ -8,7 +8,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
  * Usage: node dist/regrade.js
  */
 const database_1 = __importDefault(require("./database"));
-const flagiaEngine_1 = require("./engine/flagiaEngine");
+const pipeline_1 = require("./linguistic/pipeline");
+const runtime_1 = require("./linguistic/runtime");
+const submissionAnalysis_1 = require("./services/submissionAnalysis");
 async function regrade() {
     console.log('🔄 Fetching submitted submissions...');
     const [rows] = await database_1.default.query(`SELECT s.id, s.final_markdown, s.status, s.submitted_at, a.template_text, a.mode, a.text_limit
@@ -35,36 +37,32 @@ async function regrade() {
                 }
             }
             // Run updated analysis
-            const analysis = (0, flagiaEngine_1.runFlagiaAnalysis)(allEvents, sub.final_markdown || '', sub.template_text || '', sub.mode, sub.submitted_at);
-            // Update DB
-            await database_1.default.query(`UPDATE submissions SET
-           flagia_score = ?, flag_status = ?,
-           coefficient_of_variation = ?, revision_ratio = ?,
-           total_paste_count = ?, total_blur_duration = ?,
-           analysis_json = ?
-         WHERE id = ?`, [
-                analysis.flagiaScore,
-                analysis.flagStatus,
-                analysis.coefficientOfVariation,
-                analysis.revisionRatio,
-                analysis.totalPasteCount,
-                analysis.totalBlurDuration,
-                JSON.stringify(analysis),
-                sub.id,
-            ]);
-            console.log(`  ✅ ${sub.id.slice(0, 8)}… | ${analysis.flagiaScore.toFixed(1)} (${analysis.flagStatus}) | events: ${allEvents.length}`);
+            const analysis = await (0, pipeline_1.completeAnalysis)({
+                events: allEvents, markdown: sub.final_markdown || '', template: sub.template_text || '',
+                mode: sub.mode, submittedAt: sub.submitted_at, sessionCount: sessionRows.length,
+            }, () => { });
+            if (analysis.linguistic?.status === 'unevaluated' &&
+                ['model_unavailable', 'inference_failed', 'timeout', 'busy', 'worker_exited', 'model_changed', 'invalid_worker_result'].includes(analysis.linguistic.reason || '')) {
+                throw new Error('language_analysis_failed');
+            }
+            await (0, submissionAnalysis_1.saveSubmissionAnalysis)(sub.id, analysis, sub.final_markdown || '');
             success++;
+            console.log(`  Regraded ${success + failed}/${submissions.length}`);
         }
-        catch (err) {
-            console.error(`  ❌ ${sub.id.slice(0, 8)}… | Error: ${err.message}`);
+        catch {
+            console.error('Analysis failed; previous result preserved');
             failed++;
         }
     }
     console.log(`\n🏁 Done. ${success} regraded, ${failed} failed.`);
-    process.exit(0);
+    if (failed)
+        process.exitCode = 1;
 }
-regrade().catch((err) => {
-    console.error('Fatal error:', err);
-    process.exit(1);
+regrade().catch(() => {
+    console.error('Regrading could not be completed');
+    process.exitCode = 1;
+}).finally(async () => {
+    runtime_1.linguisticRuntime.close();
+    await database_1.default.end();
 });
 //# sourceMappingURL=regrade.js.map

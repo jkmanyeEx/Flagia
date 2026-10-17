@@ -127,7 +127,7 @@ function integrationTests(): void {
     '',
     'STANDARD',
   );
-  assert.equal(suspicious.version, 4);
+  assert.equal(suspicious.version, 5);
   assert.equal(suspicious.transcription?.basis, 'divergence');
   assert.equal(suspicious.transcription?.triggered, true);
   assert.ok(
@@ -235,4 +235,19 @@ function integrationTests(): void {
 
 correlationUnitTests();
 integrationTests();
+
+// Semantic support supplements the existing evidence; it never adds a penalty.
+const semanticText = makeFinalText();
+const semanticEvents = makeEvents(semanticText, []);
+const legacy = runFlagiaAnalysis(semanticEvents, semanticText, '', 'STANDARD');
+const meaning = {
+  status: 'evaluated' as const, stableSentenceCount: 4, surfaceEdits: 0,
+  rewordings: 0, meaningEdits: 2, unknownEdits: 0, meaningChangeRatio: .2,
+  examples: [], method: 'test',
+};
+const supported = runFlagiaAnalysis(semanticEvents, semanticText, '', 'STANDARD', undefined, meaning);
+assert.ok(supported.flagiaScore > legacy.flagiaScore, 'observed meaning changes can reduce transcription risk');
+const unavailable = runFlagiaAnalysis(semanticEvents, semanticText, '', 'STANDARD', undefined,
+  { ...meaning, status: 'unevaluated' });
+assert.equal(unavailable.flagiaScore, legacy.flagiaScore, 'missing semantic history cannot change the legacy score');
 console.log('Flagia RR/divergence correlation tests passed');

@@ -1,6 +1,7 @@
 import type { ResultSetHeader } from 'mysql2';
 import pool from '../database';
-import { runFlagiaAnalysis } from '../engine/flagiaEngine';
+import { initialAnalysis, type AnalysisInput } from '../linguistic/pipeline';
+import { saveSubmissionAnalysis, scheduleSubmissionAnalysis } from './submissionAnalysis';
 
 export type FinalSubmissionStatus = 'SUBMITTED' | 'FORCE_CLOSED';
 
@@ -19,10 +20,6 @@ export interface FinalizeSubmissionResult {
   submission?: any;
   analysis: any | null;
   analysisError?: string;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '알 수 없는 분석 오류';
 }
 
 /**
@@ -76,42 +73,24 @@ export async function finalizeSubmission(
   }
 
   try {
-    const analysis = runFlagiaAnalysis(
-      allEvents,
-      submission.final_markdown || '',
-      submission.template_text || '',
-      submission.mode,
-      submission.submitted_at
-    );
-
-    await pool.query(
-      `UPDATE submissions SET
-        flagia_score = ?, flag_status = ?,
-        coefficient_of_variation = ?, revision_ratio = ?,
-        total_paste_count = ?, total_blur_duration = ?,
-        analysis_json = ?
-       WHERE id = ? AND status = ?`,
-      [
-        analysis.flagiaScore,
-        analysis.flagStatus,
-        analysis.coefficientOfVariation,
-        analysis.revisionRatio,
-        analysis.totalPasteCount,
-        analysis.totalBlurDuration,
-        JSON.stringify(analysis),
-        options.submissionId,
-        options.status,
-      ]
-    );
+    const input: AnalysisInput = {
+      events: allEvents, markdown: submission.final_markdown || '',
+      template: submission.template_text || '', mode: submission.mode,
+      submittedAt: submission.submitted_at, sessionCount: (sessionRows as any[]).length,
+      assignmentId: submission.assignment_id, studentId: submission.student_id,
+    };
+    const analysis = initialAnalysis(input);
+    await saveSubmissionAnalysis(options.submissionId, analysis, input.markdown);
+    if (analysis.linguistic?.status === 'pending') scheduleSubmissionAnalysis(options.submissionId, input);
 
     return { outcome: 'finalized', submission, analysis };
-  } catch (error) {
-    console.error('Flagia Analysis Engine Error:', error);
+  } catch {
+    console.error('Flagia submission analysis could not be saved');
     return {
       outcome: 'finalized',
       submission,
       analysis: null,
-      analysisError: errorMessage(error),
+      analysisError: '분석 결과를 저장할 수 없습니다. 제출은 완료되었습니다.',
     };
   }
 }
