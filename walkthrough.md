@@ -1,3 +1,19 @@
+# Icon/text vertical alignment — 2026-10-18
+
+The assignment metadata used inline SVGs with a baseline offset, making smaller text sit below the icons' center. A shared rule in `src/style.css` now gives spans that directly contain an `AppIcon` an inline flex layout with centered items and consistent spacing. Existing flex controls, icon-only dimensions, and icon colors are preserved. This fixes the common markup across views with one application-source edit.
+
+![Centered assignment metadata — Korean, light theme](walkthrough-assets/icon-alignment-student-ko-light-desktop.png)
+
+![Centered assignment metadata — Korean, dark theme](walkthrough-assets/icon-alignment-student-ko-dark-desktop.png)
+
+![Centered replay heading — English, light theme](walkthrough-assets/icon-alignment-replay-en-light-desktop.png)
+
+The [geometry evidence](walkthrough-assets/icon-alignment-checks.json) covers 64 screen combinations: student assignments, teacher list/detail, report, replay, submitted content, classroom list/detail; Korean/English; light/dark; desktop/mobile. All 128 text/icon labels had matching icon/row centers, with text glyph centers within 0.5 CSS pixels. No unexpected browser warnings or errors were recorded. The production type check and build passed.
+
+These are local browser captures using synthetic account, assignment, and report data. Remote font stylesheets are intercepted to exercise the application's sans-serif fallback. Also checked [English/light mobile](walkthrough-assets/icon-alignment-student-en-light-mobile.png), [English/dark mobile](walkthrough-assets/icon-alignment-student-en-dark-mobile.png), and [English/dark replay](walkthrough-assets/icon-alignment-replay-en-dark-desktop.png). Existing SVG-only buttons and editor controls already use centered flex layouts; chart SVGs and student-authored content are unaffected.
+
+---
+
 # UI cleanup — 2026-10-18
 
 Implemented the approved six-part cleanup. These are captures of the local frontend at port 5171. Authenticated screens use intercepted local REST/WebSocket fixtures with synthetic `.test` accounts and submissions; they do not establish production behavior. The browser run uses the supported sans-serif fallback for the Google Fonts stylesheet, so it does not depend on that external font service.

@@ -1,0 +1,1221 @@
+{
+  "results": [
+    {
+      "name": "student-ko-light-desktop",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-ko-light-desktop",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "2026년 10월 18일 오전 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-ko-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-ko-light-mobile",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-ko-light-mobile",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "2026년 10월 18일 오전 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-ko-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "2026년 10월 18일 오전 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-ko-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "7월 28일 오후 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60분",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000자",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "2026년 10월 18일 오전 09:00",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-ko-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-en-light-desktop",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-en-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-en-light-desktop",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-en-light-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "October 18, 2026 at 09:00 AM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-en-light-desktop",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-en-light-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-en-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-en-light-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-en-light-mobile",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-en-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-en-light-mobile",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-en-light-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "October 18, 2026 at 09:00 AM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-en-light-mobile",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-en-light-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-en-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-en-light-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "October 18, 2026 at 09:00 AM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-en-dark-desktop",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "student-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "teacher-detail-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Jul 28, 09:00 PM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "60 min",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "3,000 characters",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "report-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "October 18, 2026 at 09:00 AM",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "Transcription review",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "replay-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Writing Process Replay",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "document-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Student account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        },
+        {
+          "label": "student@example.test",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classrooms-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    },
+    {
+      "name": "classroom-detail-en-dark-mobile",
+      "labels": [
+        {
+          "label": "Review account",
+          "display": "flex",
+          "align": "center",
+          "centerOffset": 0,
+          "textOffset": 0.5
+        }
+      ]
+    }
+  ],
+  "errors": []
+}
