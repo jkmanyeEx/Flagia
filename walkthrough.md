@@ -1,3 +1,15 @@
+# Remove the writing-integrity summary — 2026-10-18
+
+Removed the complete “글쓰기 무결성 요약 / Summary of Writing Integrity” card from the submitted-content/grading tab. The sidebar now contains only grading or student feedback. The document remains visible, with no empty summary container.
+
+![Submitted content and grading without the summary — Korean/light](walkthrough-assets/integrity-summary-removed-ko-light.png)
+
+![Submitted content and grading without the summary — English/dark](walkthrough-assets/integrity-summary-removed-en-dark.png)
+
+Production type check/build passed. Local browser fixtures verified the missing summary, exactly one sidebar card, document content, and the appropriate grading/feedback controls for admin and student roles in Korean/light and English/dark. No unexpected browser warnings or errors occurred. These are synthetic local submissions, not production accounts.
+
+---
+
 # Icon/text vertical alignment — 2026-10-18
 
 The assignment metadata used inline SVGs with a baseline offset, making smaller text sit below the icons' center. A shared rule in `src/style.css` now gives spans that directly contain an `AppIcon` an inline flex layout with centered items and consistent spacing. Existing flex controls, icon-only dimensions, and icon colors are preserved. This fixes the common markup across views with one application-source edit.

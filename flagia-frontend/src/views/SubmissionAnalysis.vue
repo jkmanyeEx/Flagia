@@ -1596,7 +1596,7 @@ const backLabel = computed(() =>
         </div>
       </div>
 
-      <!-- Right Column: Grading Form & Metrics Overview -->
+      <!-- Right Column: Grading and feedback -->
       <div class="col-span-1 space-y-6">
         <!-- Teacher Grading Panel -->
         <div v-if="isStaff" class="card p-6 border-indigo-100 shadow-sm bg-indigo-50/20">
@@ -1657,39 +1657,6 @@ const backLabel = computed(() =>
             <div class="text-xs font-semibold text-text-secondary mb-1">{{ $t('auto.m_6ffb8fd7fdb4') }}</div>
             <div class="bg-background rounded-lg p-4 text-xs text-text-primary whitespace-pre-wrap min-h-24 border border-border leading-relaxed">
               {{ feedback || t('runtime.m_6fbaaaf67ebf') }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Integrity Overview Card — staff only. Showing these metrics to
-             students would reveal the rubric and invite gaming. -->
-        <div v-if="isStaff" class="card p-6">
-          <h2 class="text-sm font-semibold text-text-primary mb-4">{{ $t('auto.m_bfb25dd7eed3') }}</h2>
-          <div class="space-y-3 text-xs">
-            <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">Flagia Score</span>
-              <strong :style="{ color: flagColor(analysis?.flagStatus || '') }">
-                {{ (analysis?.flagiaScore ?? 0).toFixed(1) }}{{ $t('auto.m_3aacaa658b85') }}{{ flagLabel(analysis?.flagStatus || '') }})
-              </strong>
-            </div>
-            <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">{{ $t('auto.m_ef3855cbe102') }}</span>
-              <strong class="text-text-primary">{{ (analysis?.sessionSummary?.totalKeystrokes ?? 0).toLocaleString() }}{{ $t('auto.m_2fc05c02be34') }}</strong>
-            </div>
-            <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">{{ $t('auto.m_be54c882a7d0') }}</span>
-              <strong :class="analysis?.totalPasteCount > 0 ? 'text-flag-amber' : 'text-flag-green'">
-                {{ analysis?.totalPasteCount ?? 0 }}{{ $t('auto.m_0b86754a940d') }} </strong>
-            </div>
-            <div class="flex justify-between items-center py-1.5 border-b border-border">
-              <span class="text-text-secondary">{{ $t('auto.m_9bd6b0db893b') }}</span>
-              <strong :class="analysis?.totalBlurDuration > 10 ? 'text-flag-amber' : 'text-flag-green'">
-                {{ analysis?.blurIntervals?.length || 0 }}{{ $t('auto.m_c1f22fef9c8b') }}{{ formatDuration(analysis?.totalBlurDuration || 0) }})
-              </strong>
-            </div>
-            <div class="flex justify-between items-center py-1.5">
-              <span class="text-text-secondary">{{ $t('auto.m_ba2dfc94fbfe') }}</span>
-              <strong class="text-text-primary">{{ analysis?.sessionSummary?.averageWPM || 0 }} WPM</strong>
             </div>
           </div>
         </div>
