@@ -3,6 +3,16 @@ import { runtimeKo } from '../runtime-generated'
 import { linguisticKo } from '../linguistic'
 
 export default {
+  landing: {
+    description: '완성된 글과 함께, 입력과 수정이 쌓인 작성 과정을 살펴봅니다.',
+    reviewNote: '분석 결과는 교사의 검토를 돕는 참고 자료입니다. 점수만으로 AI 사용이나 직접 작성 여부를 확정하지 않습니다.',
+    features: {
+      history: { title: '기록으로 확인하는 작성 과정', description: '키 입력, 붙여넣기, 화면 이탈과 문서 편집 이력을 기록합니다. 작성 과정 재생으로 글이 어떻게 바뀌었는지 확인할 수 있습니다.' },
+      behavior: { title: '다섯 가지 행동 지표와 전사 점검', description: '타이핑 리듬, 수정량, 외부 입력, 집중 시간, 작성 시간을 함께 분석하고, 수정 이력과 내용 변화를 비교해 베껴 쓰기 징후를 살펴봅니다.' },
+      language: { title: '제출 후 한국어 언어 분석', description: '지원 범위의 한국어 산문을 형태·구문 특징과 문맥 모델로 분석합니다. 처리 중인 단계와 결과를 보여주고, 분석할 수 없는 글은 미평가로 표시합니다.' },
+      review: { title: '근거를 살펴보는 분석 보고서', description: '행동 지표별 점수와 전사·언어 분석에 따른 조정을 구분해 보여줍니다. 교사는 보고서와 작성 이력을 함께 확인하며 제출물을 검토할 수 있습니다.' },
+    },
+  },
   linguistic: linguisticKo,
   auto: autoKo,
   runtime: runtimeKo,
@@ -92,11 +102,11 @@ export default {
     timerWaiting: '세션 연결 후 타이머가 시작됩니다',
   },
   replay: {
-    internalPaste: '📋 내부 복사·붙여넣기 (허용, {count}자)',
-    externalPaste: '📋 붙여넣기 실행 ({count}자)',
-    editorBlur: '⚠️ 에디터를 벗어남',
-    editorFocus: '✏️ 에디터로 복귀',
-    pastedText: '[📋 {count}자]',
+    internalPaste: '내부 복사·붙여넣기 (허용, {count}자)',
+    externalPaste: '붙여넣기 실행 ({count}자)',
+    editorBlur: '에디터를 벗어남',
+    editorFocus: '에디터로 복귀',
+    pastedText: '[붙여넣기: {count}자]',
   },
   teacher: {
     forceSummary: '세션 종료 {closed}명, 실패 {failed}명입니다.',

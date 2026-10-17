@@ -82,7 +82,7 @@ function reasonLabel(key?: string) {
         <div v-for="item in [{ key: 'featureModel', score: result.featureScore }, { key: 'contextModel', score: result.contextScore }]"
           :key="item.key" class="rounded-xl border border-border p-3.5 flex justify-between items-center gap-3">
           <span class="text-sm text-text-secondary">{{ t(`linguistic.${item.key}`) }}</span>
-          <span class="font-mono text-sm text-text-primary">{{ item.score?.toFixed(3) ?? '—' }}</span>
+          <span class="font-sans tabular-nums text-sm text-text-primary">{{ item.score?.toFixed(3) ?? '—' }}</span>
         </div>
       </div>
 
@@ -91,7 +91,7 @@ function reasonLabel(key?: string) {
         <div class="mt-3 space-y-2">
           <div v-for="item in result.evidence" :key="item.feature" class="flex justify-between gap-3 text-xs">
             <span class="text-text-secondary">{{ featureLabel(item.feature) }}</span>
-            <span class="font-mono text-text-primary">{{ item.value.toFixed(3) }} <span class="text-text-muted">({{ item.contribution > 0 ? '+' : '' }}{{ item.contribution.toFixed(2) }})</span></span>
+            <span class="font-sans tabular-nums text-text-primary">{{ item.value.toFixed(3) }} <span class="text-text-muted">({{ item.contribution > 0 ? '+' : '' }}{{ item.contribution.toFixed(2) }})</span></span>
           </div>
         </div>
       </details>

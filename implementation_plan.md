@@ -21,6 +21,57 @@
 
 ---
 
+# UI cleanup — 2026-10-18
+
+Status: approved by the user's “go”; implemented and locally verified. This section covers the new UI request; the earlier plans below remain historical context.
+
+## Findings and cause
+
+- `LandingPage.vue` duplicates the hero's login/register actions in the navigation and adds a decorative live-verification badge.
+- Its “Why Flagia?” translations still describe four indicators and imply that typing timing or tab changes establish authorship or external-source use. Current source has five behavioral components, a transcription adjustment, and asynchronous Korean linguistic analysis with pending/unevaluated states.
+- `LoginView.vue` adds three promotional feature pills and uses emoji for student/teacher selection. Emoji also appear in navigation, empty states, dialogs, metadata, analysis components, replay labels, and both translation catalogs. Some server-generated analysis descriptions contain emoji too.
+- `style.css` defines a JetBrains Mono/Fira Code monospace stack, `index.html` downloads JetBrains Mono, and account details/report values use `font-mono`.
+- `App.vue` repeats the user's role inside the settings account section.
+
+## Changes
+
+1. **Landing page:** remove the two top-right navigation actions and the hero's “실시간 글쓰기 무결성 검증” badge, including unused styles. Keep the hero's existing login/register actions as the entry points. Preserve the Flagia brand and overall page structure.
+2. **Why Flagia:** rewrite Korean and English copy around four current capabilities:
+   - **Writing history:** record input, paste, focus changes, and document edits; replay the recorded process.
+   - **Behavioral evidence:** combine typing rhythm, revision intensity, external content, focus duration, and writing time, with transcription checks.
+   - **Korean language analysis:** analyze supported prose after submission and show processing, results, or unevaluated status.
+   - **Reviewable reports:** present component scores and adjustments alongside replay evidence for teacher review. Explain that results support review and do not prove AI use or authorship.
+   Use coherent SVG icons and a restrained treatment consistent with the existing product. Remove the obsolete four-indicator and external-source tracking claims.
+3. **Authentication:** remove all three circled feature pills. Replace student/teacher emoji with consistent SVG icons and an accessible selected state, retaining registration behavior.
+4. **Application-wide icons:** add a small typed SVG icon component without a new package. Replace developer-owned emoji in navigation, controls, empty/error/success states, dialogs, report metadata, and analysis/replay UI. Remove purely decorative emoji from Korean/English copy. Use explicit text and styled status indicators where an icon adds no meaning. Give icon-only controls accessible names; hide decorative icons from assistive technology.
+5. **Existing analysis text:** remove emoji from system-generated report descriptions at their presentation boundary so older stored reports also render cleanly. Preserve student-authored content, replay document content, stored telemetry, and scoring behavior. Update system replay markers and their associated parsing together if needed.
+6. **Typography:** remove the JetBrains Mono download and monospace stack; replace all UI monospace utility/style uses with the existing sans-serif family. Use tabular numerals for scores, timers, and metrics where alignment matters. Check email wrapping in the settings modal.
+7. **Settings:** remove the complete role row and its now-unused computed value. Keep name, email, theme, and language controls.
+
+## Scope
+
+- Frontend: `src/views/LandingPage.vue`, `LoginView.vue`, `SubmissionAnalysis.vue`, `TeacherDashboard.vue`, `StudentHome.vue`, `StudentEditor.vue`, `Classrooms.vue`, `ClassroomDetail.vue`, `src/App.vue`, `src/style.css`, `index.html`, affected translation catalogs, and a shared SVG icon component/presentation helper as needed.
+- Extend `walkthrough.md` and `walkthrough-assets/` with actual verification screenshots.
+- Preserve unrelated existing working-tree changes. No scoring, database, deployment, or infrastructure changes are needed for this request.
+
+## Verification and acceptance
+
+- Run frontend type checking/production build and existing replay regression checks, particularly system marker handling and preservation of user-authored emoji.
+- Audit frontend developer-owned text and styles for remaining emoji, monospace declarations/classes, obsolete feature claims, and unused code.
+- Visually verify landing, registration role selection, authenticated navigation, settings, and representative report/dialog/empty states. Cover Korean/English, light/dark, and desktop/mobile layouts; check keyboard focus and selected states.
+- Use local fixtures if authenticated screens require them and label screenshot evidence accurately. Do not alter production accounts or submissions for visual QA.
+- Capture screenshots in `walkthrough.md`; check the final diff for unrelated edits, whitespace errors, and secrets.
+- Done means all six requested changes are visible, registration/settings/replay still work, and the verified screens contain no developer-owned emoji or the screenshot's monospace typeface.
+
+## Results
+
+- All requested removals, current-system landing copy, shared SVG icons, and sans-serif typography are implemented. Student-authored emoji remain in documents and replay.
+- Verification exposed an authenticated-route transition race: the loading/content root replacement could retain `fade-enter-from` at opacity zero after animation frames, without an active animation or console error. `App.vue` now animates a stable keyed wrapper; the captured report and replay remain visible after asynchronous loading.
+- Frontend production type check/build, replay regression checks, system-text/content-preservation checks, and 24 local browser assertions passed. The browser run covers Korean/light and English/dark at desktop/mobile sizes, selected-role registration payloads, preference persistence, dialogs, member emails, reports, and replay. No unexpected browser warnings/errors were recorded.
+- Screenshots and the local-fixture boundary are documented in `walkthrough.md`. Existing unrelated working-tree changes were preserved. No deployment was performed.
+
+---
+
 # 현재 구현 범위 — 언어 분석 추가
 
 2026년 10월 18일 대화 기준. 아래 범위와 점수 정책이 뒤의 과거 확장안을 대체한다. 사용자는 언어 분석 감점을 처음부터 실제 최종 점수에 반영하기로 결정했다. 상태: 구현 및 로컬 검증 완료. 실제 제출 환경의 탐지 성능은 추가 검증 대상이다.

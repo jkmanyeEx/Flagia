@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from './components/AppIcon.vue'
 import { computed, onErrorCaptured, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -64,11 +65,6 @@ const roleLabel = computed(() => t(
       : 'nav.studentAccount',
 ))
 
-const roleName = computed(() => t(
-  user.value?.role === 'TEACHER' ? 'common.teacher'
-    : user.value?.role === 'ADMIN' ? 'common.admin'
-      : 'common.student',
-))
 </script>
 
 <template>
@@ -117,20 +113,20 @@ const roleName = computed(() => t(
       <div class="sidebar-nav">
         <!-- Classrooms (both roles) -->
         <button @click="router.push('/classrooms')" class="sidebar-nav-item" :class="{ active: activeNav === 'classrooms' }">
-          <span class="item-icon">🏫</span>
+          <span class="item-icon"><AppIcon name="classroom" :size="18" /></span>
           <span class="item-label">{{ t('nav.classrooms') }}</span>
         </button>
 
         <!-- Teacher / Admin: assignment management -->
         <button v-if="user?.role === 'TEACHER' || user?.role === 'ADMIN'" @click="router.push('/teacher')" class="sidebar-nav-item" :class="{ active: activeNav === 'teacher-dash' }">
-          <span class="item-icon">📝</span>
+          <span class="item-icon"><AppIcon name="document" :size="18" /></span>
           <span class="item-label">{{ t('nav.assignmentManagement') }}</span>
         </button>
 
         <!-- Student / Admin: student-side assignment views -->
         <template v-if="user?.role === 'STUDENT' || user?.role === 'ADMIN'">
           <button @click="router.push('/student')" class="sidebar-nav-item" :class="{ active: activeNav === 'student-all' }">
-            <span class="item-icon">📋</span>
+            <span class="item-icon"><AppIcon name="clipboard" :size="18" /></span>
             <span class="item-label">{{ t(user?.role === 'ADMIN' ? 'nav.studentAssignments' : 'nav.assignments') }}</span>
           </button>
         </template>
@@ -138,7 +134,7 @@ const roleName = computed(() => t(
         <div class="sidebar-divider"></div>
 
         <button @click="showSettingsModal = true" class="sidebar-nav-item">
-          <span class="item-icon">⚙️</span>
+          <span class="item-icon"><AppIcon name="settings" :size="18" /></span>
           <span class="item-label">{{ t('nav.settings') }}</span>
         </button>
       </div>
@@ -193,7 +189,11 @@ const roleName = computed(() => t(
 
         <router-view v-else v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <!-- Keep the animated node stable when a view switches from its
+                 loading root to its content root after an async response. -->
+            <div :key="route.path">
+              <component :is="Component" />
+            </div>
           </transition>
         </router-view>
       </main>
@@ -204,7 +204,7 @@ const roleName = computed(() => t(
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-bold text-text-primary">{{ t('settings.title') }}</h3>
-          <button @click="showSettingsModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showSettingsModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <div class="space-y-5 text-sm text-text-secondary">
@@ -212,19 +212,13 @@ const roleName = computed(() => t(
           <section>
             <h4 class="settings-section-label">{{ t('settings.account') }}</h4>
             <div class="bg-background rounded-lg p-3 space-y-2">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between gap-4">
                 <span class="text-text-muted">{{ t('common.name') }}</span>
                 <span class="font-semibold text-text-primary">{{ user?.name }}</span>
               </div>
-              <div class="flex items-center justify-between">
-                <span class="text-text-muted">{{ t('common.email') }}</span>
-                <span class="font-mono text-text-primary">{{ user?.email }}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-text-muted">{{ t('common.role') }}</span>
-                <span class="badge" :class="user?.role === 'STUDENT' ? 'badge-amber' : 'badge-green'">
-                  {{ roleName }}
-                </span>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-text-muted shrink-0">{{ t('common.email') }}</span>
+                <span class="min-w-0 break-all text-right text-text-primary">{{ user?.email }}</span>
               </div>
             </div>
           </section>

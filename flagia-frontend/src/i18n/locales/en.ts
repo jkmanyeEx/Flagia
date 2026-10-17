@@ -3,6 +3,16 @@ import { runtimeEn } from '../runtime-generated'
 import { linguisticEn } from '../linguistic'
 
 export default {
+  landing: {
+    description: 'Look beyond the finished text to the input and revisions that shaped it.',
+    reviewNote: 'Results support teacher review. A score alone does not establish AI use or prove who authored a text.',
+    features: {
+      history: { title: 'A recorded writing process', description: 'Record keystrokes, pastes, focus changes, and document edits. Replay the writing history to see how the text developed.' },
+      behavior: { title: 'Five behavioral signals and transcription checks', description: 'Analyze typing rhythm, revision intensity, external content, focus duration, and writing time. Compare revisions with content changes for signs of copy-typing.' },
+      language: { title: 'Korean language analysis after submission', description: 'Analyze supported Korean prose with linguistic features and a context model. Show processing stages and results, or an unevaluated status when analysis is unavailable.' },
+      review: { title: 'Reports with evidence to review', description: 'See component scores alongside transcription and language adjustments. Teachers can review the report together with the recorded writing history.' },
+    },
+  },
   linguistic: linguisticEn,
   auto: autoEn,
   runtime: runtimeEn,
@@ -92,11 +102,11 @@ export default {
     timerWaiting: 'The timer starts after the writing session connects',
   },
   replay: {
-    internalPaste: '📋 Internal copy and paste (allowed, {count} characters)',
-    externalPaste: '📋 Pasted text ({count} characters)',
-    editorBlur: '⚠️ Left the editor',
-    editorFocus: '✏️ Returned to the editor',
-    pastedText: '[📋 {count} characters]',
+    internalPaste: 'Internal copy and paste (allowed, {count} characters)',
+    externalPaste: 'Pasted text ({count} characters)',
+    editorBlur: 'Left the editor',
+    editorFocus: 'Returned to the editor',
+    pastedText: '[Paste: {count} characters]',
   },
   teacher: {
     forceSummary: 'Closed {closed} sessions; {failed} failed.',

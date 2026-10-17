@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -284,7 +285,7 @@ function formatDate(d: string) {
 
     <!-- Empty -->
     <div v-else-if="assignments.length === 0" class="card p-12 text-center">
-      <div class="text-4xl mb-3">📝</div>
+      <div class="state-icon mb-3"><AppIcon name="document" :size="32" /></div>
       <p class="text-text-secondary">{{ $t('auto.m_63b946d86936') }}</p>
       <p class="text-sm text-text-muted mt-1">{{ $t('auto.m_5f34d27640f7') }}</p>
     </div>
@@ -319,9 +320,9 @@ function formatDate(d: string) {
           </div>
 
           <div class="flex items-center gap-4 text-xs text-text-muted mt-1.5">
-            <span>📅 {{ formatDate(assignment.due_date) }}</span>
-            <span>⏱ {{ assignment.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
-            <span>📏 {{ assignment.text_limit?.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
+            <span><AppIcon name="calendar" :size="18" /> {{ formatDate(assignment.due_date) }}</span>
+            <span><AppIcon name="clock" :size="18" /> {{ assignment.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
+            <span><AppIcon name="ruler" :size="18" /> {{ assignment.text_limit?.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
             <span class="badge badge-green text-xs py-0">{{ getModeLabel(assignment.mode) }}</span>
           </div>
 
@@ -365,13 +366,13 @@ function formatDate(d: string) {
       <div class="modal-content max-w-sm mx-4 p-6">
         <div class="flex items-center justify-between mb-5">
           <h3 class="text-lg font-bold">{{ $t('auto.m_10782992e05f') }}</h3>
-          <button @click="showJoinModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showJoinModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <form @submit.prevent="joinAssignment" class="flex flex-col gap-4">
           <div>
             <label class="label">{{ $t('auto.m_76ecf36b9680') }}</label>
-            <input v-model="joinCode" type="text" class="input font-mono tracking-widest text-center text-lg uppercase" placeholder="XXXXXX" maxlength="6" required />
+            <input v-model="joinCode" type="text" class="input font-sans tabular-nums tracking-widest text-center text-lg uppercase" placeholder="XXXXXX" maxlength="6" required />
             <p v-if="joinError" class="text-danger text-sm mt-2">{{ joinError }}</p>
           </div>
 

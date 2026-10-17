@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -613,14 +614,14 @@ function getGaugeOffset(score: number) {
               <td>
                 <div class="font-medium text-text-primary">{{ a.title }}</div>
                 <div v-if="isAdmin && a.teacher_name" class="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
-                  <span>👤 {{ a.teacher_name }}</span>
+                  <span><AppIcon name="user" :size="18" /> {{ a.teacher_name }}</span>
                   <span v-if="owns(a)" class="badge badge-green text-[10px]">{{ $t('auto.m_a2c25143883d') }}</span>
                   <span v-else-if="invited(a)" class="badge badge-amber text-[10px]">{{ $t('auto.m_5df8dd738eb1') }}</span>
                   <span v-else class="badge text-[10px] bg-background text-text-muted">{{ $t('auto.m_1bcb8a0449c6') }}</span>
                 </div>
               </td>
               <td>
-                <span class="font-mono bg-background px-2 py-1 rounded border border-border text-xs">{{ a.join_code }}</span>
+                <span class="font-sans tabular-nums bg-background px-2 py-1 rounded border border-border text-xs">{{ a.join_code }}</span>
               </td>
               <td class="text-text-secondary text-sm">
                 {{ formatDate(a.due_date) }}
@@ -673,14 +674,14 @@ function getGaugeOffset(score: number) {
           <div class="flex items-center gap-3 mb-2">
             <h2 class="text-xl font-bold text-text-primary">{{ selectedAssignment.title }}</h2>
             <div class="bg-primary-light text-primary px-2.5 py-1 rounded flex items-center gap-2 cursor-pointer border border-primary/20 hover:bg-primary hover:text-white transition-colors" @click="copyJoinCode(selectedAssignment.join_code)">
-              <span class="font-mono font-bold tracking-wider">{{ selectedAssignment.join_code }}</span>
+              <span class="font-sans tabular-nums font-bold tracking-wider">{{ selectedAssignment.join_code }}</span>
               <span class="text-xs">{{ copySuccess ? t('runtime.m_bd5bd14ccbd6') : t('runtime.m_e1ac63f18ec7') }}</span>
             </div>
           </div>
           <div class="flex items-center gap-4 text-sm text-text-muted">
-            <span>📅 {{ formatDate(selectedAssignment.due_date) }}</span>
-            <span>⏱ {{ selectedAssignment.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
-            <span>📏 {{ selectedAssignment.text_limit?.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
+            <span><AppIcon name="calendar" :size="18" /> {{ formatDate(selectedAssignment.due_date) }}</span>
+            <span><AppIcon name="clock" :size="18" /> {{ selectedAssignment.time_limit }}{{ $t('auto.m_0b877b721418') }}</span>
+            <span><AppIcon name="ruler" :size="18" /> {{ selectedAssignment.text_limit?.toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</span>
             <span class="badge badge-green py-0.5">{{ getModeLabel(selectedAssignment.mode) }}</span>
           </div>
         </div>
@@ -779,7 +780,7 @@ function getGaugeOffset(score: number) {
               <td>
                 <div v-if="sub.flagia_score != null" class="flex items-center gap-1.5 text-sm">
                   <span class="inline-block w-2 h-2 rounded-full" :style="{ background: getGaugeColor(sub.flag_status) }"></span>
-                  <span class="font-mono text-text-secondary">{{ Number(sub.flagia_score).toFixed(0) }}</span>
+                  <span class="font-sans tabular-nums text-text-secondary">{{ Number(sub.flagia_score).toFixed(0) }}</span>
                 </div>
                 <span v-else class="text-text-muted text-sm">-</span>
               </td>
@@ -804,7 +805,7 @@ function getGaugeOffset(score: number) {
             </h3>
             <p class="text-sm text-text-muted">{{ detailSubmission.student_email }}</p>
           </div>
-          <button @click="closeDetail" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="closeDetail" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <div v-if="detailSubmission.flagia_score != null" class="flex items-center gap-4 mb-6 p-4 rounded-xl bg-background border border-border">
@@ -846,7 +847,7 @@ function getGaugeOffset(score: number) {
             <h3 class="text-xl font-bold">{{ $t('auto.m_d329efb8767d') }}</h3>
             <p class="text-xs text-text-muted mt-0.5">{{ selectedAssignment.title }} {{ $t('auto.m_6e61fab67a11') }}</p>
           </div>
-          <button @click="showTemplateModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showTemplateModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <!-- Editable (owner / admin) -->
@@ -880,7 +881,7 @@ function getGaugeOffset(score: number) {
       <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
         <div class="flex items-center justify-between mb-5 flex-shrink-0">
           <h3 class="text-xl font-bold">{{ $t('auto.m_8c5ef35b4d30') }}</h3>
-          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <form @submit.prevent="createAssignment" class="flex flex-col gap-5 flex-1">
@@ -959,7 +960,7 @@ function getGaugeOffset(score: number) {
     >
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="text-center">
-          <div class="text-4xl mb-4">⚠️</div>
+          <div class="state-icon mb-4"><AppIcon name="warning" :size="32" /></div>
           <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_9084ae153c26') }}</h3>
           <p class="text-sm text-text-secondary leading-relaxed"> {{ $t('auto.m_b5fe389ffc0a') }} {{ inProgressCount }}{{ $t('auto.m_b77a9f2e10f3') }} </p>
         </div>
@@ -989,7 +990,7 @@ function getGaugeOffset(score: number) {
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">🗑️</div>
+        <div class="state-icon mb-4"><AppIcon name="trash" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_d43e543db9a2') }}</h3>
         <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_ba3c45021d9d') }}<br>{{ $t('auto.m_4e7508a15293') }}</p>
         <div class="flex gap-2">
@@ -1002,7 +1003,7 @@ function getGaugeOffset(score: number) {
     <!-- Delete Submission Confirmation Modal -->
     <div v-if="showDeleteSubModal" class="modal-overlay" @click.self="showDeleteSubModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">🔄</div>
+        <div class="state-icon mb-4"><AppIcon name="refresh" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_7c2e6a580fc6') }}</h3>
         <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_7f81bb11971e') }}<br>{{ $t('auto.m_7c88ee6946c2') }}</p>
         <div class="flex gap-2">

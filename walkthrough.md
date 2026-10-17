@@ -1,3 +1,66 @@
+# UI cleanup — 2026-10-18
+
+Implemented the approved six-part cleanup. These are captures of the local frontend at port 5171. Authenticated screens use intercepted local REST/WebSocket fixtures with synthetic `.test` accounts and submissions; they do not establish production behavior. The browser run uses the supported sans-serif fallback for the Google Fonts stylesheet, so it does not depend on that external font service.
+
+## Landing and current-system copy
+
+![Landing page — Korean, light theme](walkthrough-assets/ui-cleanup-landing-ko-light-desktop.png)
+
+- The top-right login/register actions and live-verification badge are removed. The hero's main entry buttons remain.
+- “Why Flagia?” now describes recorded writing/replay, five behavioral indicators and transcription checks, asynchronous Korean language analysis, and evidence-based teacher review. It explains the limits of a score.
+- The feature icons share one restrained accent treatment and adapt to the theme.
+- Also checked [English/dark desktop](walkthrough-assets/ui-cleanup-landing-en-dark-desktop.png), [Korean/light mobile](walkthrough-assets/ui-cleanup-landing-ko-light-mobile.png), and [English/dark mobile](walkthrough-assets/ui-cleanup-landing-en-dark-mobile.png).
+
+## Registration and shared icon system
+
+![Registration — Korean, light theme](walkthrough-assets/ui-cleanup-register-ko-light-desktop.png)
+
+![Registration — English, dark theme, mobile](walkthrough-assets/ui-cleanup-register-en-dark-mobile.png)
+
+- All three promotional pills are removed from the authentication panel.
+- Student/teacher choices use SVG icons, visible selection indicators, and `aria-pressed`. Keyboard selection and focus remain available; the mobile layout fits without clipping.
+- A locally intercepted registration request retained the selected `TEACHER` role without creating an account.
+- Navigation, empty/error/success states, dialogs, metadata, analysis cards, and replay controls use the shared SVG system or plain labels. Korean and English UI labels contain no decorative emoji.
+
+## Settings and typography
+
+![Settings — Korean, light theme](walkthrough-assets/ui-cleanup-settings-ko-light-desktop.png)
+
+![Settings — English, dark theme, mobile](walkthrough-assets/ui-cleanup-settings-en-dark-mobile.png)
+
+- Settings contains name, email, theme, and language; the complete role row is removed.
+- JetBrains Mono and Fira Code references, the JetBrains font download, and UI monospace styling are removed. Scores and timers use sans-serif tabular numerals. Code blocks also inherit the sans-serif family.
+- Theme and language changes persist after reload. All four desktop/mobile locale/theme combinations passed the settings and horizontal-overflow checks.
+- [Classroom member emails](walkthrough-assets/ui-cleanup-classroom-member-email.png) use the same sans-serif typography.
+
+## Reports, replay, and loading transitions
+
+![Report with stored legacy descriptions](walkthrough-assets/ui-cleanup-analysis-report.png)
+
+![Replay with SVG controls](walkthrough-assets/ui-cleanup-analysis-replay.png)
+
+- Legacy server-generated report prose is normalized only at the presentation boundary. Test descriptions and verdicts originally contained emoji; the visible report does not.
+- Follow-up, corrected per user clarification: metric icons match their heading text color. Local fixtures covering all three statuses verified identical icon/heading colors across five cards in both light and dark themes; the production build passed.
+
+![Metric icons matched to heading text in light theme](walkthrough-assets/ui-cleanup-metric-icon-text-light.png)
+
+![Metric icons matched to heading text in dark theme](walkthrough-assets/ui-cleanup-metric-icon-text-dark.png)
+
+- Student-written emoji survive document display and replay unchanged. Telemetry, original submission text, scoring, and stored analysis are not rewritten.
+- Visual checks exposed a route transition race: replacing the loading root with the report root could leave `fade-enter-from` at opacity zero, even after animation frames, with no active animation. Animating a stable keyed wrapper in the authenticated layout fixes this. The final captures wait for transition classes to clear.
+- Also verified the [error state](walkthrough-assets/ui-cleanup-analysis-error.png), [delete dialog](walkthrough-assets/ui-cleanup-delete-classroom-dialog.png), and [empty classroom state](walkthrough-assets/ui-cleanup-empty-classrooms-en-dark-desktop.png).
+
+## Verification
+
+- Production type check and frontend build passed.
+- Existing Korean/IME replay frame regressions passed.
+- `node tests/systemText.test.ts` passed, covering legacy icon removal and preservation of student-authored emoji in document frames.
+- [24 browser assertions](walkthrough-assets/ui-cleanup-checks.json) passed, including registration role payload, keyboard selection, preference persistence, typography, emoji, horizontal-overflow, report, and replay checks. No unexpected browser warnings or errors were recorded; the registration/error fixtures deliberately return 400/404 responses.
+- Source audit found no developer-owned emoji or monospace declarations/classes in frontend source. Final scoped whitespace and sensitive-data reviews passed.
+- Local verification only; no production deployment was performed.
+
+---
+
 # Exact Korean/IME replay walkthrough
 
 ## Student source document

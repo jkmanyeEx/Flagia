@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -70,15 +71,6 @@ function toggleMode() {
           <h1 class="text-4xl font-extrabold leading-tight mb-6"> {{ $t('auto.m_4c0f6d62090a') }}<br/> {{ $t('auto.m_01739529c62a') }}<br/> {{ $t('auto.m_c3bb0cd37224') }} </h1>
           <p class="text-lg text-white/70 leading-relaxed mb-8"> {{ $t('auto.m_64e58a2a4da6') }} </p>
 
-          <!-- Feature badges -->
-          <div class="flex flex-wrap gap-3">
-            <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> {{ $t('auto.m_adcc61c0d9e6') }} </div>
-            <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> {{ $t('auto.m_4a7ed5ecbf25') }} </div>
-            <div class="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2 text-sm">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> {{ $t('auto.m_49f29f38536e') }} </div>
-          </div>
         </div>
 
         <!-- Footer -->
@@ -132,17 +124,19 @@ function toggleMode() {
             <!-- Role (register only) -->
             <div v-if="!isLogin">
               <label class="label">{{ $t('auto.m_f3f4087e969a') }}</label>
-              <div class="grid grid-cols-2 gap-2">
+              <div class="grid grid-cols-2 gap-3" role="group" :aria-label="t('common.role')">
                 <button type="button"
                   @click="role = 'STUDENT'"
-                  class="mode-option text-center text-sm"
+                  class="mode-option role-option text-sm"
+                  :aria-pressed="role === 'STUDENT'"
                   :class="{ selected: role === 'STUDENT' }">
-                  <div class="text-lg mb-0.5">🎓</div> {{ $t('auto.m_d8f324428d3c') }} </button>
+                  <AppIcon name="student" :size="22" /> {{ $t('common.student') }}<span class="role-indicator"><AppIcon v-if="role === 'STUDENT'" name="check" :size="12" /></span></button>
                 <button type="button"
                   @click="role = 'TEACHER'"
-                  class="mode-option text-center text-sm"
+                  class="mode-option role-option text-sm"
+                  :aria-pressed="role === 'TEACHER'"
                   :class="{ selected: role === 'TEACHER' }">
-                  <div class="text-lg mb-0.5">📋</div> {{ $t('auto.m_b9649a5e65bb') }} </button>
+                  <AppIcon name="teacher" :size="22" /> {{ $t('common.teacher') }}<span class="role-indicator"><AppIcon v-if="role === 'TEACHER'" name="check" :size="12" /></span></button>
               </div>
             </div>
 

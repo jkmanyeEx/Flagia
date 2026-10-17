@@ -18,7 +18,7 @@ export const runtimeKo = {
   "m_a6519d0dcdf5": "탈퇴 중...",
   "m_ecb4cc8789ec": "회원가입",
   "m_a7f1d63de443": "Flagia 점수",
-  "m_bd5bd14ccbd6": "✅ 복사됨",
+  "m_bd5bd14ccbd6": "복사됨",
   "m_1314de2e1225": "가입하기",
   "m_853da12c7c36": "강제 종료",
   "m_a131d48b814c": "강제 종료되어 자동 제출되었습니다",
@@ -120,10 +120,10 @@ export const runtimeKo = {
   "m_8d02e4577452": "학생의 입력을 기다리는 중",
   "m_76597dada5a0": "현재 작성 중인 학생이 없습니다.",
   "m_2520ef21787d": "화면 이탈",
-  "m_e1ac63f18ec7": "📋 복사",
-  "m_e2dfd8d54b03": "🔴 위험",
-  "m_84eeb3accb1c": "🟡 주의",
-  "m_7126335957e5": "🟢 안전"
+  "m_e1ac63f18ec7": "복사",
+  "m_e2dfd8d54b03": "위험",
+  "m_84eeb3accb1c": "주의",
+  "m_7126335957e5": "안전"
 } as const
 
 export const runtimeEn: Record<keyof typeof runtimeKo, string> = {
@@ -145,7 +145,7 @@ export const runtimeEn: Record<keyof typeof runtimeKo, string> = {
   "m_a6519d0dcdf5": "Withdrawing...",
   "m_ecb4cc8789ec": "Sign up",
   "m_a7f1d63de443": "Flagia score",
-  "m_bd5bd14ccbd6": "✅ Copied",
+  "m_bd5bd14ccbd6": "Copied",
   "m_1314de2e1225": "Sign up",
   "m_853da12c7c36": "force quit",
   "m_a131d48b814c": "Forced to close and auto-submit",
@@ -247,8 +247,8 @@ export const runtimeEn: Record<keyof typeof runtimeKo, string> = {
   "m_8d02e4577452": "Waiting for student input",
   "m_76597dada5a0": "There are currently no students writing.",
   "m_2520ef21787d": "Outside editor",
-  "m_e1ac63f18ec7": "📋 Copy",
-  "m_e2dfd8d54b03": "🔴 Danger",
-  "m_84eeb3accb1c": "🟡Caution",
-  "m_7126335957e5": "🟢Safe"
+  "m_e1ac63f18ec7": "Copy",
+  "m_e2dfd8d54b03": "Danger",
+  "m_84eeb3accb1c": "Caution",
+  "m_7126335957e5": "Safe"
 }

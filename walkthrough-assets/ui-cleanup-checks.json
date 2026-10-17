@@ -1,0 +1,154 @@
+{
+  "checks": [
+    {
+      "name": "landing-ko-light-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "register-ko-light-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "landing-en-dark-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "register-en-dark-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "landing-ko-light-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "register-ko-light-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "landing-en-dark-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "register-en-dark-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "registration request retains selected role"
+    },
+    {
+      "name": "empty-classrooms-ko-light-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "settings-ko-light-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "empty-classrooms-en-dark-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "settings-en-dark-desktop",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "empty-classrooms-ko-light-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "settings-ko-light-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "empty-classrooms-en-dark-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "settings-en-dark-mobile",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "delete-classroom-dialog",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "classroom-member-email",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "analysis-error",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "analysis-report",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "analysis-replay",
+      "emoji": [],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "analysis-replay-user-content",
+      "emoji": [
+        "👨",
+        "🏫",
+        "📋"
+      ],
+      "mono": [],
+      "overflow": 0
+    },
+    {
+      "name": "submitted-document",
+      "emoji": [
+        "👨",
+        "🏫",
+        "📋"
+      ],
+      "mono": [],
+      "overflow": 0
+    }
+  ],
+  "errors": []
+}

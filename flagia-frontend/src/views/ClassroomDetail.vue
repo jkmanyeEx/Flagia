@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -191,7 +192,7 @@ function statusLabel(s: string) {
     <div v-if="loading" class="text-center py-16 text-text-muted">{{ $t('auto.m_06e61b86cbda') }}</div>
 
     <div v-else-if="error" class="card p-8 text-center">
-      <div class="text-3xl mb-3">❌</div>
+      <div class="state-icon mb-3"><AppIcon name="error" :size="32" /></div>
       <p class="text-text-primary font-medium">{{ error }}</p>
     </div>
 
@@ -205,7 +206,7 @@ function statusLabel(s: string) {
             </div>
             <p v-if="classroom.description" class="text-sm text-text-secondary mb-3">{{ classroom.description }}</p>
             <div class="flex items-center gap-4 text-xs text-text-muted">
-              <span>👤 {{ classroom.teacher_name }}</span>
+              <span><AppIcon name="user" :size="18" /> {{ classroom.teacher_name }}</span>
               <span v-if="isOwner">{{ $t('auto.m_ac70e60b574b') }} {{ members.length }}{{ $t('auto.m_5a62fd50d243') }}</span>
               <span>{{ $t('auto.m_29d76704e171') }} {{ assignments.length }}{{ $t('auto.m_11600c9ada77') }}</span>
               <span v-if="adminUnaffiliated" class="badge text-xs bg-background text-text-muted">{{ $t('auto.m_133e87491f20') }}</span>
@@ -220,8 +221,8 @@ function statusLabel(s: string) {
               @click="copyCode"
               class="bg-primary-light text-primary px-3 py-2 rounded-lg flex items-center gap-2 cursor-pointer border border-primary/20 hover:bg-primary hover:text-white transition-colors"
             >
-              <span class="font-mono font-bold tracking-widest text-lg">{{ classroom.join_code }}</span>
-              <span class="text-xs">{{ copySuccess ? '✅' : '📋' }}</span>
+              <span class="font-sans tabular-nums font-bold tracking-widest text-lg">{{ classroom.join_code }}</span>
+              <AppIcon :name="copySuccess ? 'check' : 'copy'" :size="16" />
             </div>
           </div>
         </div>
@@ -302,7 +303,7 @@ function statusLabel(s: string) {
             </tr>
             <tr v-else v-for="m in members" :key="m.id">
               <td class="font-medium text-text-primary">{{ m.name }}</td>
-              <td class="text-text-secondary text-sm font-mono">{{ m.email }}</td>
+              <td class="text-text-secondary text-sm font-sans tabular-nums">{{ m.email }}</td>
               <td class="text-text-muted text-sm">{{ formatDate(m.joined_at) }}</td>
             </tr>
           </tbody>
@@ -315,7 +316,7 @@ function statusLabel(s: string) {
       <div class="modal-content max-w-2xl mx-4 p-6 max-h-[90vh] overflow-y-auto flex flex-col">
         <div class="flex items-center justify-between mb-5 flex-shrink-0">
           <h3 class="text-xl font-bold">{{ $t('auto.m_8ba30178139a') }} {{ classroom?.name }}</h3>
-          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <form @submit.prevent="createAssignment" class="flex flex-col gap-5 flex-1">
@@ -388,7 +389,7 @@ function statusLabel(s: string) {
     <!-- Delete Classroom Modal -->
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">🗑️</div>
+        <div class="state-icon mb-4"><AppIcon name="trash" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_65ac7d8f5a04') }}</h3>
         <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_6ce0e32f7586') }}<br>{{ $t('auto.m_2cb8d30bad29') }}</p>
         <div class="flex gap-2">

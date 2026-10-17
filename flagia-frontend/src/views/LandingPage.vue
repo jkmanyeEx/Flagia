@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import AppIcon from '../components/AppIcon.vue'
+import type { IconName } from '../components/icons'
 
 const router = useRouter()
+const features: { key: string; icon: IconName }[] = [
+  { key: 'history', icon: 'replay' },
+  { key: 'behavior', icon: 'chart' },
+  { key: 'language', icon: 'language' },
+  { key: 'review', icon: 'document' },
+]
 </script>
 
 <template>
@@ -15,10 +23,6 @@ const router = useRouter()
           </div>
           <span>Flagia</span>
         </div>
-        <div class="landing-nav-actions">
-          <button @click="router.push('/login')" class="btn btn-ghost btn-sm">{{ $t('auto.m_e225a6fd754f') }}</button>
-          <button @click="router.push('/register')" class="btn btn-primary btn-sm">{{ $t('auto.m_22a4bea87413') }}</button>
-        </div>
       </div>
     </nav>
 
@@ -30,8 +34,6 @@ const router = useRouter()
         <div class="landing-orb landing-orb-3"></div>
       </div>
       <div class="landing-hero-content">
-        <div class="landing-hero-badge">
-          <span class="landing-badge-dot"></span> {{ $t('auto.m_8ada951dab90') }} </div>
         <h1 class="landing-hero-title"> {{ $t('auto.m_cd26dc337a37') }} <span class="gradient-text">{{ $t('auto.m_d49e7d7f85cf') }}</span>{{ $t('auto.m_c6a37dff82fc') }}<br/> {{ $t('auto.m_a99611b905e7') }} </h1>
         <p class="landing-hero-desc"> {{ $t('auto.m_1dc125550edd') }}<br/> {{ $t('auto.m_25b1b3212118') }} </p>
         <div class="landing-hero-actions">
@@ -49,57 +51,16 @@ const router = useRouter()
     <section class="landing-features">
       <div class="landing-section-inner">
         <h2 class="landing-section-title">{{ $t('auto.m_73e54d924cc0') }}</h2>
-        <p class="landing-section-desc">{{ $t('auto.m_49200ed09167') }}</p>
+        <p class="landing-section-desc">{{ $t('landing.description') }}</p>
         
         <div class="landing-features-grid">
-          <div class="feature-card">
-            <div class="feature-icon feature-icon-purple">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-            </div>
-            <h3>{{ $t('auto.m_5510e0715196') }}</h3>
-            <p>{{ $t('auto.m_8cdf6176b8b4') }}</p>
-          </div>
-          
-          <div class="feature-card">
-            <div class="feature-icon feature-icon-blue">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0-6 0"/>
-                <path d="M12.02 2C6.21 2 2 6.74 2 12c0 5.26 4.13 10 10 10 5.51 0 10-4.74 10-10 0-5.26-4.49-10-10-10z"/>
-              </svg>
-            </div>
-            <h3>{{ $t('auto.m_7780fff69b64') }}</h3>
-            <p>{{ $t('auto.m_d6fbcaf7fbd3') }}</p>
-          </div>
-          
-          <div class="feature-card">
-            <div class="feature-icon feature-icon-green">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10"/>
-                <line x1="12" y1="20" x2="12" y2="4"/>
-                <line x1="6" y1="20" x2="6" y2="14"/>
-              </svg>
-            </div>
-            <h3>{{ $t('auto.m_72997a11be87') }}</h3>
-            <p>{{ $t('auto.m_9cdc5382d812') }}</p>
-          </div>
-          
-          <div class="feature-card">
-            <div class="feature-icon feature-icon-amber">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-            </div>
-            <h3>{{ $t('auto.m_9e7f8a70bb20') }}</h3>
-            <p>{{ $t('auto.m_956a9232220d') }}</p>
-          </div>
+          <article v-for="feature in features" :key="feature.key" class="feature-card">
+            <div class="feature-icon"><AppIcon :name="feature.icon" :size="24" /></div>
+            <h3>{{ $t(`landing.features.${feature.key}.title`) }}</h3>
+            <p>{{ $t(`landing.features.${feature.key}.description`) }}</p>
+          </article>
         </div>
+        <p class="landing-review-note">{{ $t('landing.reviewNote') }}</p>
       </div>
     </section>
 
@@ -153,7 +114,7 @@ const router = useRouter()
 
 <style scoped>
 .landing {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-background);
   overflow-x: hidden;
 }
@@ -199,11 +160,6 @@ const router = useRouter()
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.landing-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 /* ── Hero ── */
@@ -259,25 +215,6 @@ const router = useRouter()
   z-index: 1;
   max-width: 720px;
   margin: 0 auto;
-}
-.landing-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.875rem;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  border-radius: 9999px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
-}
-.landing-badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  animation: statusPulse 2s ease-in-out infinite;
 }
 .landing-hero-title {
   font-size: 3rem;
@@ -375,11 +312,18 @@ const router = useRouter()
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
-.feature-icon-purple { background: #EEF2FF; color: #4F46E5; }
-.feature-icon-blue { background: #EFF6FF; color: #2563EB; }
-.feature-icon-green { background: #ECFDF5; color: #16A34A; }
-.feature-icon-amber { background: #FEF3C7; color: #D97706; }
+.landing-review-note {
+  max-width: 46rem;
+  margin: 1.75rem auto 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  text-align: center;
+  text-wrap: pretty;
+}
 
 /* ── How it works ── */
 .landing-how {

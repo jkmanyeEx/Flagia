@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -179,7 +180,7 @@ async function confirmLeave() {
 
     <!-- Empty -->
     <div v-else-if="classrooms.length === 0" class="card p-12 text-center">
-      <div class="text-4xl mb-3">🏫</div>
+      <div class="state-icon mb-3"><AppIcon name="classroom" :size="32" /></div>
       <p class="text-text-primary font-medium mb-1">
         {{ isAdmin ? t('runtime.m_4a9439731531') : user?.role === 'TEACHER' ? t('runtime.m_e8518d00c94d') : t('runtime.m_480996c1b27c') }}
       </p>
@@ -198,7 +199,7 @@ async function confirmLeave() {
       >
         <div class="flex items-start justify-between mb-2">
           <h3 class="text-lg font-bold text-text-primary">{{ c.name }}</h3>
-          <span class="font-mono text-xs bg-background px-2 py-0.5 rounded border border-border">{{ c.join_code }}</span>
+          <span class="font-sans tabular-nums text-xs bg-background px-2 py-0.5 rounded border border-border">{{ c.join_code }}</span>
         </div>
 
         <!-- Admin: ownership / membership indicator -->
@@ -214,7 +215,7 @@ async function confirmLeave() {
         <div class="flex items-center gap-4 text-xs text-text-muted">
           <span>{{ $t('auto.m_ac70e60b574b') }} {{ c.member_count ?? 0 }}{{ $t('auto.m_5a62fd50d243') }}</span>
           <span>{{ $t('auto.m_29d76704e171') }} {{ c.assignment_count ?? 0 }}{{ $t('auto.m_11600c9ada77') }}</span>
-          <span v-if="(user?.role === 'STUDENT' || isAdmin) && c.teacher_name">👤 {{ c.teacher_name }}</span>
+          <span v-if="(user?.role === 'STUDENT' || isAdmin) && c.teacher_name"><AppIcon name="user" :size="18" /> {{ c.teacher_name }}</span>
         </div>
 
         <!-- Action buttons -->
@@ -246,7 +247,7 @@ async function confirmLeave() {
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-5">
           <h3 class="text-xl font-bold">{{ $t('auto.m_8950eb25f0e3') }}</h3>
-          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showCreateModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <form @submit.prevent="createClassroom" class="flex flex-col gap-5">
@@ -276,7 +277,7 @@ async function confirmLeave() {
       <div class="modal-content max-w-sm mx-4 p-6">
         <div class="flex items-center justify-between mb-5">
           <h3 class="text-xl font-bold">{{ $t('auto.m_4218233945c6') }}</h3>
-          <button @click="showJoinModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showJoinModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
 
         <form @submit.prevent="joinClassroom" class="flex flex-col gap-4">
@@ -284,7 +285,7 @@ async function confirmLeave() {
             <label class="label">{{ $t('auto.m_37cac543c064') }}</label>
             <input
               v-model="joinCode"
-              class="input font-mono tracking-widest text-center uppercase"
+              class="input font-sans tabular-nums tracking-widest text-center uppercase"
               :placeholder="$t('auto.m_19d6bdc99aa5')"
               maxlength="8"
               required
@@ -306,7 +307,7 @@ async function confirmLeave() {
       <div class="modal-content max-w-md mx-4 p-6">
         <div class="flex items-center justify-between mb-5">
           <h3 class="text-xl font-bold">{{ $t('auto.m_a0d83f95b712') }}</h3>
-          <button @click="showEditModal = false" class="btn btn-ghost btn-xs">✕</button>
+          <button @click="showEditModal = false" class="btn btn-ghost btn-xs" :aria-label="$t('common.close')"><AppIcon name="close" :size="18" /></button>
         </div>
         <form @submit.prevent="saveEdit" class="flex flex-col gap-5">
           <div>
@@ -330,7 +331,7 @@ async function confirmLeave() {
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">🗑️</div>
+        <div class="state-icon mb-4"><AppIcon name="trash" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_65ac7d8f5a04') }}</h3>
         <p class="text-sm text-text-secondary mb-2">
           <strong>{{ deleteTarget?.name }}</strong>{{ $t('auto.m_6d8da5d40847') }} </p>
@@ -347,7 +348,7 @@ async function confirmLeave() {
     <!-- Leave Confirmation Modal -->
     <div v-if="showLeaveModal" class="modal-overlay" @click.self="showLeaveModal = false">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">👋</div>
+        <div class="state-icon mb-4"><AppIcon name="leave" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_5865a030ce4b') }}</h3>
         <p class="text-sm text-text-secondary mb-6">
           <strong>{{ leaveTarget?.name }}</strong>{{ $t('auto.m_13bc6ee4ae2d') }}<br> {{ $t('auto.m_bd68ae6af18a') }} </p>

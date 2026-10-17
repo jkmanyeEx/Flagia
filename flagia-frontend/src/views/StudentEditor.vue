@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -757,7 +758,7 @@ async function confirmSubmit() {
   <!-- Submitted overlay -->
   <div v-else-if="submitted" class="min-h-screen bg-background flex items-center justify-center p-6">
     <div class="card p-10 max-w-md text-center">
-      <div class="text-5xl mb-4">{{ submitOutcome === 'teacher' ? '🔒' : '✅' }}</div>
+      <AppIcon :name="submitOutcome === 'teacher' ? 'lock' : 'check'" :size="40" class="mb-4 text-primary" />
       <h2 class="text-xl font-bold text-text-primary mb-2">
         {{ submitOutcome === 'teacher'
           ? t('runtime.m_a131d48b814c')
@@ -899,7 +900,7 @@ async function confirmSubmit() {
     <!-- Submit Confirmation Modal -->
     <div v-if="showSubmitModal" class="modal-overlay" @click.self="!submitting && (showSubmitModal = false)">
       <div class="modal-content max-w-sm mx-4 p-6 text-center">
-        <div class="text-4xl mb-4">📝</div>
+        <div class="state-icon mb-4"><AppIcon name="document" :size="32" /></div>
         <h3 class="text-lg font-bold mb-2">{{ $t('auto.m_eb197cfc5a20') }}</h3>
         <p class="text-sm text-text-secondary mb-6">{{ $t('auto.m_c1967cfbdd3f') }}<br>{{ $t('auto.m_ff5cd16cc754') }}</p>
         <div class="flex gap-2">

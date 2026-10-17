@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import AppIcon from '../components/AppIcon.vue'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import LinguisticPanel from '../components/LinguisticPanel.vue'
+import type { IconName } from '../components/icons'
+import { systemText } from '../utils/systemText'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
@@ -137,7 +140,26 @@ onUnmounted(() => {
 })
 
 const submission = computed(() => data.value?.submission)
-const analysis = computed(() => data.value?.analysis)
+const analysis = computed(() => {
+  const result = data.value?.analysis
+  if (!result) return result
+  // Only product prose is normalized. Documents, revision excerpts, and source
+  // events remain untouched, including any emoji the student actually wrote.
+  return {
+    ...result,
+    verdict: systemText(result.verdict),
+    verdictDetail: systemText(result.verdictDetail),
+    components: result.components && Object.fromEntries(Object.entries(result.components).map(([key, value]) => {
+      const component = value as Record<string, any>
+      return [key, { ...component, label: systemText(component.label), description: systemText(component.description) }]
+    })),
+    scoreAdjustments: result.scoreAdjustments?.map((item: Record<string, any>) => ({ ...item, label: systemText(item.label) })),
+    transcription: result.transcription && {
+      ...result.transcription,
+      rows: result.transcription.rows?.map((row: Record<string, any>) => ({ ...row, label: systemText(row.label), value: systemText(row.value) })),
+    },
+  }
+})
 
 // Gauge calculations
 const gaugeRadius = 65
@@ -156,14 +178,15 @@ function flagBg(status: string) {
   return { GREEN: 'bg-flag-green-bg', AMBER: 'bg-flag-amber-bg', RED: 'bg-flag-red-bg' }[status] || ''
 }
 
-function componentIcon(key: string) {
-  return {
-    typingRhythm: '⌨️',
-    revisionIntensity: '✏️',
-    externalContent: '📋',
-    focusDuration: '👁️',
-    writingTime: '⏱️',
-  }[key] || '📊'
+function componentIcon(key: string): IconName {
+  const icons: Record<string, IconName> = {
+    typingRhythm: 'keyboard',
+    revisionIntensity: 'edit',
+    externalContent: 'clipboard',
+    focusDuration: 'focus',
+    writingTime: 'clock',
+  }
+  return icons[key] || 'chart'
 }
 
 function formatDuration(seconds: number) {
@@ -1004,7 +1027,7 @@ const backLabel = computed(() =>
   <!-- Error -->
   <div v-else-if="error" class="min-h-screen flex items-center justify-center bg-background">
     <div class="card p-8 text-center max-w-md">
-      <div class="text-3xl mb-3">❌</div>
+      <div class="state-icon mb-3"><AppIcon name="error" :size="32" /></div>
       <p class="text-text-primary font-medium">{{ error }}</p>
       <button @click="goBack" class="btn btn-outline mt-4">{{ $t('auto.m_1a7f31cadb8c') }}</button>
     </div>
@@ -1040,20 +1063,20 @@ const backLabel = computed(() =>
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'report' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>📊</span> {{ $t('auto.m_7da98d316224') }} </button>
+        <span><AppIcon name="chart" :size="18" /></span> {{ $t('auto.m_7da98d316224') }} </button>
       <button 
         v-if="isStaff && events.length > 0"
         @click="activeTab = 'replay'" 
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'replay' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>🎥</span> {{ $t('auto.m_0a8993f745da') }} </button>
+        <span><AppIcon name="replay" :size="18" /></span> {{ $t('auto.m_0a8993f745da') }} </button>
       <button 
         @click="activeTab = 'content'" 
         class="px-5 py-3 text-sm font-semibold border-b-2 transition-all duration-150 -mb-px flex items-center gap-1.5"
         :class="activeTab === 'content' ? 'border-primary text-primary font-bold' : 'border-transparent text-text-secondary hover:text-text-primary'"
       >
-        <span>📝</span> {{ isStaff ? t('runtime.m_9a65b829653d') : t('runtime.m_2e36bb0516b0') }}
+        <span><AppIcon name="document" :size="18" /></span> {{ isStaff ? t('runtime.m_9a65b829653d') : t('runtime.m_2e36bb0516b0') }}
       </button>
     </div>
 
@@ -1102,9 +1125,9 @@ const backLabel = computed(() =>
               <strong>{{ submission.assignmentTitle }}</strong>
             </div>
             <div v-if="submission" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-muted mb-4 break-all">
-              <span>👤 {{ submission.studentName }}</span>
-              <span>📧 {{ submission.studentEmail }}</span>
-              <span v-if="submission.submittedAt">📅 {{ formatDate(submission.submittedAt) }}</span>
+              <span><AppIcon name="user" :size="18" /> {{ submission.studentName }}</span>
+              <span><AppIcon name="mail" :size="18" /> {{ submission.studentEmail }}</span>
+              <span v-if="submission.submittedAt"><AppIcon name="calendar" :size="18" /> {{ formatDate(submission.submittedAt) }}</span>
             </div>
 
             <!-- Verdict (staff only — the detail names which signals fired) -->
@@ -1158,7 +1181,7 @@ const backLabel = computed(() =>
 
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
-                <span class="text-base">{{ componentIcon(key as string) }}</span>
+                <AppIcon :name="componentIcon(key as string)" :size="18" class="text-text-primary" />
                 <h3 class="text-sm font-semibold text-text-primary">{{ comp.label }}</h3>
               </div>
               <p class="text-xs text-text-secondary leading-relaxed">{{ comp.description }}</p>
@@ -1179,11 +1202,11 @@ const backLabel = computed(() =>
         <div class="space-y-2 text-sm">
           <div class="flex justify-between items-center">
             <span class="text-text-secondary">{{ $t('auto.m_1a92b5b9d6e4') }}</span>
-            <span class="font-mono font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
+            <span class="font-sans tabular-nums font-semibold text-text-primary">{{ (analysis.baseScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
           <div v-for="(adj, i) in analysis.scoreAdjustments" :key="i" class="flex justify-between items-center text-flag-red">
-            <span>⚠️ {{ adj.code === 'linguistic' || adj.label === '언어 분석 감점' ? t('linguistic.deduction') : adj.label }}</span>
-            <span class="font-mono font-semibold">{{ adj.points.toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
+            <span><AppIcon name="warning" :size="18" /> {{ adj.code === 'linguistic' || adj.label === '언어 분석 감점' ? t('linguistic.deduction') : adj.label }}</span>
+            <span class="font-sans tabular-nums font-semibold">{{ adj.points.toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }}</span>
           </div>
 
           <!-- Copy-typing (transcription) penalty breakdown: each detection metric -->
@@ -1192,14 +1215,14 @@ const backLabel = computed(() =>
             <div class="space-y-1">
               <div v-for="(row, i) in analysis.transcription.rows" :key="i" class="flex justify-between items-center text-xs">
                 <span class="text-text-secondary">{{ row.label }}</span>
-                <span class="font-mono font-medium text-text-primary">{{ row.value }}</span>
+                <span class="font-sans tabular-nums font-medium text-text-primary">{{ row.value }}</span>
               </div>
             </div>
           </div>
 
           <div class="flex justify-between items-center pt-2 border-t border-border">
             <span class="font-semibold text-text-primary">{{ $t('auto.m_989e36dca738') }}</span>
-            <span class="font-mono font-bold text-base" :style="{ color: flagColor(analysis.flagStatus || '') }">
+            <span class="font-sans tabular-nums font-bold text-base" :style="{ color: flagColor(analysis.flagStatus || '') }">
               {{ (analysis.flagiaScore ?? 0).toFixed(1) }}{{ $t('auto.m_d3ce2d28427e') }} </span>
           </div>
         </div>
@@ -1223,7 +1246,7 @@ const backLabel = computed(() =>
               v-model.number="bucketSizeSec"
               class="w-32 accent-primary cursor-pointer"
             />
-            <span class="font-mono bg-background px-1.5 py-0.5 rounded border border-border">{{ bucketSizeSec }}{{ $t('auto.m_3845248e2861') }}</span>
+            <span class="font-sans tabular-nums bg-background px-1.5 py-0.5 rounded border border-border">{{ bucketSizeSec }}{{ $t('auto.m_3845248e2861') }}</span>
           </div>
         </div>
 
@@ -1270,7 +1293,7 @@ const backLabel = computed(() =>
                 >
                   <div class="text-[10px] text-slate-400 font-bold border-b border-white/10 pb-1 mb-1 flex items-center justify-between">
                     <span>{{ $t('auto.m_7f8f9c6c5a8a') }}{{ Number(i) + 1 }}</span>
-                    <span>⏰ {{ Math.round(bucket.startMs / 1000) }}{{ $t('auto.m_54c5f6a70d25') }} {{ Math.round(bucket.endMs / 1000) }}{{ $t('auto.m_3845248e2861') }}</span>
+                    <span><AppIcon name="clock" :size="14" /> {{ Math.round(bucket.startMs / 1000) }}{{ $t('auto.m_54c5f6a70d25') }} {{ Math.round(bucket.endMs / 1000) }}{{ $t('auto.m_3845248e2861') }}</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-slate-400">{{ $t('auto.m_154c4f57bfc3') }}</span>
@@ -1278,7 +1301,7 @@ const backLabel = computed(() =>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-slate-400">{{ $t('auto.m_ff6c58848174') }}</span>
-                    <span class="font-bold font-mono">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
+                    <span class="font-bold font-sans tabular-nums">{{ bucket.avgIki > 0 ? bucket.avgIki + 'ms' : '-' }}</span>
                   </div>
                   <div v-if="bucket.pasteCount > 0" class="flex justify-between text-red-400 font-semibold">
                     <span>{{ $t('auto.m_879b30a54395') }}</span>
@@ -1355,27 +1378,27 @@ const backLabel = computed(() =>
         <div v-if="analysis" class="grid grid-cols-3 gap-4 text-sm">
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_d7c8513a95a1') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ (analysis.coefficientOfVariation ?? 0).toFixed(4) }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ (analysis.coefficientOfVariation ?? 0).toFixed(4) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_794da54ad3dd') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ (analysis.revisionRatio ?? 0).toFixed(4) }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ (analysis.revisionRatio ?? 0).toFixed(4) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_bdb7c55540ea') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ analysis.totalPasteCount ?? 0 }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ analysis.totalPasteCount ?? 0 }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_4e280a04d457') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ formatDuration(analysis.totalBlurDuration ?? 0) }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ formatDuration(analysis.totalBlurDuration ?? 0) }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_946ae8af7bb0') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ submission?.mode }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ submission?.mode }}</div>
           </div>
           <div class="p-3 bg-background rounded-lg">
             <div class="text-xs text-text-muted">{{ $t('auto.m_3562c28be077') }}</div>
-            <div class="font-mono font-bold mt-0.5">{{ (submission?.textLimit ?? 0).toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</div>
+            <div class="font-sans tabular-nums font-bold mt-0.5">{{ (submission?.textLimit ?? 0).toLocaleString() }}{{ $t('auto.m_a862646b2e3b') }}</div>
           </div>
         </div>
       </div>
@@ -1387,7 +1410,7 @@ const backLabel = computed(() =>
         <div class="flex items-center justify-between mb-4 border-b border-border pb-3">
           <div>
             <h2 class="text-sm font-semibold text-text-primary flex items-center gap-2">
-              <span>🎥 Writing Process Replay</span>
+              <span><AppIcon name="replay" :size="18" /> Writing Process Replay</span>
               <span class="badge badge-green text-xs">Simulated Playback</span>
             </h2>
             <p class="text-xs text-text-muted mt-0.5">{{ $t('auto.m_c50131be38e3') }}</p>
@@ -1409,7 +1432,7 @@ const backLabel = computed(() =>
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
             <div class="text-xs text-text-muted">{{ $t('auto.m_1fe541c264f0') }}</div>
             <div class="text-base font-bold text-text-primary mt-1">
-              {{ replayState.text.replace(/\[📋[^\]]*\]/g, '').length }}{{ $t('auto.m_a862646b2e3b') }} </div>
+              {{ replayState.text.length }}{{ $t('auto.m_a862646b2e3b') }} </div>
           </div>
           <div class="bg-white p-3 rounded-lg border border-border text-center shadow-xs">
             <div class="text-xs text-text-muted">{{ $t('auto.m_e716bfea331e') }}</div>
@@ -1429,7 +1452,7 @@ const backLabel = computed(() =>
         <!-- Video-like Layout -->
         <div class="grid grid-cols-3 gap-4 mb-4 h-96">
           <!-- Editor Canvas -->
-          <div class="col-span-2 bg-slate-950 text-slate-200 p-6 rounded-lg font-mono text-sm overflow-y-auto border border-slate-800 relative flex flex-col">
+          <div class="col-span-2 bg-slate-950 text-slate-200 p-6 rounded-lg font-sans tabular-nums text-sm overflow-y-auto border border-slate-800 relative flex flex-col">
             <div class="absolute top-2 right-2 text-[10px] text-slate-500 font-sans select-none tracking-widest font-bold">
               REPLAY SCREEN
             </div>
@@ -1450,7 +1473,7 @@ const backLabel = computed(() =>
           </div>
 
           <!-- Real-time Event Logger -->
-          <div class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-[11px] overflow-y-auto border border-slate-800 flex flex-col">
+          <div class="bg-slate-900 text-slate-300 p-4 rounded-lg font-sans tabular-nums text-[11px] overflow-y-auto border border-slate-800 flex flex-col">
             <div class="text-slate-500 font-sans font-semibold mb-2 select-none uppercase tracking-wider text-[10px] border-b border-slate-800 pb-1">
               Event Log (Realtime)
             </div>
@@ -1467,18 +1490,18 @@ const backLabel = computed(() =>
         <div class="bg-white p-4 rounded-lg border border-border shadow-xs flex items-center justify-between gap-4">
           <!-- Play / Pause / Stop -->
           <div class="flex items-center gap-1.5">
-            <button @click="replayPlaying ? pauseReplay() : startReplay()" class="btn btn-primary btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_39adf9c87a6a')">
-              <span v-if="replayPlaying">⏸</span>
-              <span v-else>▶</span>
+            <button @click="replayPlaying ? pauseReplay() : startReplay()" class="btn btn-primary btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_39adf9c87a6a')" :aria-label="$t('auto.m_39adf9c87a6a')">
+              <span v-if="replayPlaying"><AppIcon name="pause" :size="18" /></span>
+              <span v-else><AppIcon name="play" :size="18" /></span>
             </button>
-            <button @click="stopReplay" class="btn btn-outline btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_1d441e78c39c')">
-              <span>⏹</span>
+            <button @click="stopReplay" class="btn btn-outline btn-sm flex items-center justify-center w-10 h-9 p-0" :title="$t('auto.m_1d441e78c39c')" :aria-label="$t('auto.m_1d441e78c39c')">
+              <span><AppIcon name="stop" :size="18" /></span>
             </button>
           </div>
 
           <!-- Scrubber and Time -->
           <div class="flex-1 flex items-center gap-3">
-            <span class="text-xs font-mono text-text-secondary min-w-[45px] text-right">
+            <span class="text-xs font-sans tabular-nums text-text-secondary min-w-[45px] text-right">
               {{ formatDuration(replayCurrentMs / 1000) }}
             </span>
             <input
@@ -1489,7 +1512,7 @@ const backLabel = computed(() =>
               @input="pauseReplay"
               class="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary"
             />
-            <span class="text-xs font-mono text-text-secondary min-w-[45px]">
+            <span class="text-xs font-sans tabular-nums text-text-secondary min-w-[45px]">
               {{ formatDuration(replayTotalMs / 1000) }}
             </span>
           </div>
@@ -1500,7 +1523,7 @@ const backLabel = computed(() =>
               v-for="s in [1, 5, 10, 20, 50]"
               :key="s"
               @click="setSpeed(s)"
-              class="px-2 py-1 text-[11px] font-mono font-bold rounded transition-colors"
+              class="px-2 py-1 text-[11px] font-sans tabular-nums font-bold rounded transition-colors"
               :class="replaySpeed === s ? 'bg-primary text-white' : 'text-text-secondary hover:bg-slate-200'"
             >
               {{ s }}x
@@ -1517,8 +1540,8 @@ const backLabel = computed(() =>
         <div class="flex flex-col gap-1.5">
           <div v-for="(interval, i) in analysis.blurIntervals.slice(0, 20)" :key="i"
             class="flex items-center gap-3 text-xs p-2 rounded-lg hover:bg-background transition-colors">
-            <span class="text-text-muted w-8 text-right font-mono">#{{ Number(i) + 1 }}</span>
-            <span class="font-mono text-text-secondary">
+            <span class="text-text-muted w-8 text-right font-sans tabular-nums">#{{ Number(i) + 1 }}</span>
+            <span class="font-sans tabular-nums text-text-secondary">
               {{ Math.round(interval.startMs / 1000) }}s → {{ Math.round(interval.endMs / 1000) }}s
             </span>
             <span class="font-semibold" :class="{
@@ -1551,10 +1574,10 @@ const backLabel = computed(() =>
             <h1 class="text-2xl font-bold text-text-primary mb-2">{{ submission?.assignmentTitle }}</h1>
             <div class="flex items-center justify-between text-xs text-text-muted">
               <div class="flex items-center gap-3">
-                <span class="font-semibold text-text-secondary">👤 {{ submission?.studentName }}</span>
-                <span>📧 {{ submission?.studentEmail }}</span>
+                <span class="font-semibold text-text-secondary"><AppIcon name="user" :size="18" /> {{ submission?.studentName }}</span>
+                <span><AppIcon name="mail" :size="18" /> {{ submission?.studentEmail }}</span>
               </div>
-              <div class="flex items-center gap-3 font-mono">
+              <div class="flex items-center gap-3 font-sans tabular-nums">
                 <span>{{ $t('auto.m_a02275483e95') }} <strong>{{ finalPlain?.length || 0 }}{{ $t('auto.m_a862646b2e3b') }}</strong></span>
                 <span v-if="submission?.submittedAt">{{ $t('auto.m_d00f440ba613') }} {{ formatDate(submission.submittedAt) }}</span>
               </div>
@@ -1578,7 +1601,7 @@ const backLabel = computed(() =>
         <!-- Teacher Grading Panel -->
         <div v-if="isStaff" class="card p-6 border-indigo-100 shadow-sm bg-indigo-50/20">
           <h2 class="text-sm font-bold text-indigo-900 mb-4 flex items-center gap-1.5">
-            <span>✏️</span> {{ $t('auto.m_9bc0c8862341') }} </h2>
+            <span><AppIcon name="edit" :size="18" /></span> {{ $t('auto.m_9bc0c8862341') }} </h2>
           
           <form @submit.prevent="submitGrade" class="space-y-4">
             <div>
@@ -1594,7 +1617,7 @@ const backLabel = computed(() =>
                   :placeholder="$t('auto.m_8663bc78339f')"
                   class="input w-full pr-12 focus:border-primary no-spinner"
                 />
-                <span class="absolute right-3 text-xs font-mono text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
+                <span class="absolute right-3 text-xs font-sans tabular-nums text-text-muted">/ {{ submission?.maxScore || 100 }}</span>
               </div>
             </div>
 
