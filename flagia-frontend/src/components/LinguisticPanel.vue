@@ -62,7 +62,6 @@ function reasonLabel(key?: string) {
 
     <div v-else-if="result.status === 'unevaluated'" class="mt-4 rounded-xl border border-border p-4">
       <p class="text-sm text-text-primary">{{ reasonLabel(result.reason) }}</p>
-      <p class="text-xs text-text-secondary mt-1">{{ t('linguistic.unevaluatedDetail') }}</p>
       <button v-if="retryable" class="btn btn-outline btn-sm mt-3" :disabled="retrying" @click="$emit('retry')">
         {{ t(retrying ? 'linguistic.retrying' : 'linguistic.retry') }}
       </button>
@@ -78,8 +77,6 @@ function reasonLabel(key?: string) {
           <p class="text-xl sm:text-2xl font-bold mt-1 tabular-nums text-text-primary">{{ finalScore.toFixed(1) }}</p></div>
       </div>
       <p class="text-sm font-semibold text-text-primary mt-4">{{ t(`linguistic.levels.${result.level || 'none'}`) }}</p>
-      <p class="text-xs text-text-secondary mt-1 leading-relaxed">{{ t('linguistic.interpretation') }}</p>
-      <p v-if="result.deduction > result.appliedDeduction" class="text-xs text-text-secondary mt-1">{{ t('linguistic.floor', { points: result.deduction }) }}</p>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
         <div v-for="item in [{ key: 'featureModel', score: result.featureScore }, { key: 'contextModel', score: result.contextScore }]"
@@ -88,7 +85,6 @@ function reasonLabel(key?: string) {
           <span class="font-mono text-sm text-text-primary">{{ item.score?.toFixed(3) ?? '—' }}</span>
         </div>
       </div>
-      <p class="text-xs text-text-muted mt-2">{{ t('linguistic.notProbability') }}</p>
 
       <details v-if="result.evidence?.length" class="mt-4 border-t border-border pt-3">
         <summary class="cursor-pointer text-sm font-medium text-text-secondary">{{ t('linguistic.evidence') }}</summary>
@@ -98,7 +94,6 @@ function reasonLabel(key?: string) {
             <span class="font-mono text-text-primary">{{ item.value.toFixed(3) }} <span class="text-text-muted">({{ item.contribution > 0 ? '+' : '' }}{{ item.contribution.toFixed(2) }})</span></span>
           </div>
         </div>
-        <p class="text-xs text-text-muted mt-2 leading-relaxed">{{ t('linguistic.evidenceHelp') }}</p>
       </details>
 
       <div v-if="result.revisions" class="mt-4 border-t border-border pt-4">
@@ -123,9 +118,6 @@ function reasonLabel(key?: string) {
         <p class="text-xs text-text-muted mt-2 leading-relaxed">{{ t('linguistic.revisionsHelp') }}</p>
         <p v-if="result.revisions.coverage === 'sampled'" class="text-xs text-text-muted mt-1">{{ t('linguistic.sampledHistory') }}</p>
       </div>
-      <p v-if="result.validation !== 'validated'" class="text-xs text-text-secondary leading-relaxed mt-4 rounded-lg bg-flag-amber-bg p-3">
-        {{ t('linguistic.provisional', { count: result.calibrationHumanCount ?? 0 }) }}
-      </p>
     </template>
   </section>
 </template>
