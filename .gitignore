@@ -17,3 +17,25 @@ flagia-backend/.linguistic-local/
 .deploy/
 *.pem
 
+# Local planning and walkthrough artifacts
+/implementation_plan.md
+/walkthrough.md
+/linguistic_filter_research.md
+/walkthrough-assets/
+
+# Generated verification reports and captures (keep verification scripts tracked)
+/verification/*.md
+/verification/*.json
+/verification/*.png
+/verification/*.jpg
+/verification/*.jpeg
+/verification/*.webp
+
+# Unused Vite starter files
+/flagia-frontend/README.md
+/flagia-frontend/src/components/HelloWorld.vue
+/flagia-frontend/src/assets/hero.png
+/flagia-frontend/src/assets/vite.svg
+/flagia-frontend/src/assets/vue.svg
+/flagia-frontend/public/icons.svg
+
