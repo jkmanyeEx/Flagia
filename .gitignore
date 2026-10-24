@@ -2,9 +2,8 @@
 .env.*
 !.env.example
 
-flagia-frontend/node_modules/
-flagia-frontend/dist/
-flagia-backend/node_modules/
+node_modules/
+dist/
 flagia-backend/.venv-linguistic/
 flagia-backend/.linguistic-local/
 **/__pycache__/

@@ -53,7 +53,7 @@ npm run test:replay-protocol
 .venv-linguistic/bin/python -m unittest discover -s linguistic -p 'test_*.py' -v
 ```
 
-The runtime/submission tests require prepared model files. The submission test uses an in-memory SQL adapter and never connects to a live database. In environments that restrict the `tsx` CLI's IPC socket, use `node --import tsx` followed by the same TypeScript test path. Frontend checks are `npm run build` and `npm run test:replay`. The separate `flagia-frontend/tests/linguistic-preview.cjs` serves local UI fixtures only and is never imported by the application. See the repository walkthrough for screenshots and evaluation counts.
+The runtime/submission tests require prepared model files. The submission test uses an in-memory SQL adapter and never connects to a live database. In environments that restrict the `tsx` CLI's IPC socket, use `node --import tsx` followed by the same TypeScript test path. Frontend checks are `npm run build` and `npm run test:replay`.
 
 ## Primary references
 
